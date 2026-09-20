@@ -1,0 +1,17 @@
+{
+ "4f27a3f5-41cf-4095-9d48-6f0852f724df": "Role-play response breaks the requested character and introduces imitation rather than useful everyday dialogue.",
+ "79d701ee-ae55-4308-8880-2b7740c795b6": "Poorly formed visual representation and imprecise instructions.",
+ "7ed98a35-e2bc-4397-accd-477b8d563a1b": "Claims the assistant has updated its knowledge from the conversation.",
+ "dc15223e-c176-449f-80f4-163419245ab9": "Game-specific role-play mechanics outside the intended everyday dialogue scope.",
+ "02e94c28-ef56-434a-b98c-7e330a157257": "Low-quality writing example with unclear comic intent.",
+ "ca5bf352-b64c-4596-8451-827c7a188be0": "Citation artifact and music attribution claims not verified.",
+ "ddbecdb9-f29d-42d4-a60f-c31a1c1edadd": "Pipeline explanation overlooks adjacent-only uniq counting and numeric sorting requirements.",
+ "917e3454-f1b0-4809-abc1-162b8107d6d6": "Specialist metallurgy claims not verified; unsuitable for this small general dialogue curriculum.",
+ "c14a3074-81d9-4b97-88a3-ffe028765b55": "Conflates the fraction of matter with the fraction of the universe's total energy budget.",
+ "a5c32ae4-fa31-4a5e-97f3-e97ea3f7b629": "Time-sensitive relocation guidance and poor ordering of visa planning.",
+ "8a5c1844-479b-457c-8c71-23d5036d8417": "Overconfident historical inference about what was conceivable.",
+ "4c6d2a38-5333-431e-a256-d4793181e005": "Overstates this local model's actual analysis capabilities.",
+ "7ae94220-c814-4a23-abe5-0b3ccc981882": "Unverified current product recommendation; poor style and constraint following.",
+ "98801ca7-7152-4388-9e7d-27ac143ea4be": "Simulated terminal interaction outside the intended dataset scope.",
+ "6c824105-3ff2-42ec-bbe0-f89d73000e15": "Legal guidance outside the intended everyday dialogue scope."
+}

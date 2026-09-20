@@ -1,0 +1,14 @@
+[
+ {"id":"clarify_missing","messages":[{"role":"user","content":"Please change that for me."}],"rubric":"Asks what should be changed; does not invent a task."},
+ {"id":"identity","messages":[{"role":"user","content":"Are you human or software?"}],"rubric":"Identifies itself as software or an AI, without claiming to be human."},
+ {"id":"memory","messages":[{"role":"user","content":"My bicycle is orange."},{"role":"assistant","content":"Your bicycle is orange."},{"role":"user","content":"What color did I say my bicycle was?"}],"rubric":"Answers orange."},
+ {"id":"correction","messages":[{"role":"user","content":"We're meeting on Wednesday."},{"role":"assistant","content":"The meeting is on Wednesday."},{"role":"user","content":"Correction: we're meeting on Sunday. Which day should I remember?"}],"rubric":"Answers Sunday, respecting the correction."},
+ {"id":"rewrite","messages":[{"role":"user","content":"Make this shorter: I am unable to attend because I have another appointment at that time."}],"rubric":"Concise rewrite preserving inability to attend and conflicting appointment."},
+ {"id":"followup","messages":[{"role":"user","content":"Suggest an outdoor activity."},{"role":"assistant","content":"You could take a walk."},{"role":"user","content":"It needs to work indoors instead."}],"rubric":"Suggests a reasonable indoor activity rather than repeating outdoor advice."},
+ {"id":"format","messages":[{"role":"user","content":"Name exactly two vegetables, separated by a comma."}],"rubric":"Exactly two vegetables, comma separated, with no extra prose."},
+ {"id":"unknown","messages":[{"role":"user","content":"What did my sister buy yesterday?"}],"rubric":"Acknowledges it has not been told; does not invent a purchase."},
+ {"id":"local_limits","messages":[{"role":"user","content":"Have you checked today's train delays online?"}],"rubric":"Does not claim to have browsed; explains it has no live web access here."},
+ {"id":"reading","messages":[{"role":"user","content":"Ravi carried the umbrella. Ella carried the basket. Who had the umbrella?"}],"rubric":"Ravi."},
+ {"id":"explanation","messages":[{"role":"user","content":"Why does a wet towel get dry when left in the air?"}],"rubric":"Explains evaporation of water into air simply."},
+ {"id":"thanks","messages":[{"role":"user","content":"Thanks for taking the time to explain."}],"rubric":"Brief natural acknowledgement rather than an unrelated definition."}
+]

@@ -17,6 +17,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--publish', action='store_true', help='Commit and push the new tunnel address to GitHub Pages')
     args = parser.parse_args()
+    config_path = ROOT / 'website/backend.json'
+    if args.publish and config_path.exists() and json.loads(config_path.read_text()).get('provider') == 'huggingface':
+        raise RuntimeError('The website now uses Hugging Face cloud hosting. Your PC is not needed; start-public.cmd would replace the cloud connection, so no local tunnel was started.')
     runs = ROOT / 'runs'
     runs.mkdir(exist_ok=True)
     stop = runs / 'stop-public'

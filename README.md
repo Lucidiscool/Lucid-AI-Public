@@ -6,17 +6,21 @@ Lucid V5 is a local AI workspace with streaming conversations, memory controls, 
 
 ## GitHub Pages
 
-The public website chats with the owner's **existing Lucid V5 Python app and Qwen3-4B model**, running on the owner's computer. GitHub Pages hosts the interface; a free Cloudflare Quick Tunnel connects it to `public_server.py`. No paid AI API is used. The computer, model, gateway, and tunnel must remain running. This is a small public demo, not an always-on hosted service; Quick Tunnels have no uptime guarantee and change address on restart.
+The public website chats with **Lucid V5 hosted on free Hugging Face ZeroGPU**, independently of the owner's computer. GitHub Pages hosts the interface and the [Lucid V5 Space](https://huggingface.co/spaces/lucidpy/lucid-ai-v5) runs the AI. No paid AI API is used. Free GPU queues, daily visitor quotas, and Space sleep/restarts apply; this is not guaranteed uninterrupted hosting.
 
-Each visitor receives a random session token and a separate temporary workspace. Messages and replies pass through Cloudflare and are stored temporarily on the host computer. Visitors cannot access the owner's personal conversations or each other's sessions. Sessions expire after one hour without requests and are cleaned up when another session is created, or when the gateway exits normally. The public gateway accepts at most 12 sessions, one active AI request, 10 messages/commands per minute per session, and 100 requests per session. Web research and model/system configuration are available only in the local app. Memory, feedback, conversation controls, and the blank experiment remain isolated to each visitor session.
+The hosted adapter reuses V5's DeveloperChat, memory, feedback, and experiment code. It runs the same underlying Qwen3-4B-Instruct-2507 model in Transformers BF16 instead of Windows llama.cpp Q4 GGUF; precision and sampling can change individual responses. Each page connection has a separate temporary Gradio session with in-memory chats and memories. Messages go to Hugging Face, not the owner's computer. Refreshes, expiration, restarts, or sleep can lose session data. There is a 512-token reply ceiling and 100-request session limit. Web research and model/system configuration remain local-only. The owner's personal data is not uploaded.
 
 Changes pushed to `main` automatically deploy the `website/` folder through `.github/workflows/pages.yml`. Only website assets are deployed to Pages.
 
-## Start or stop public chat (host computer)
+## Cloud hosting
+
+Your computer can be off. No local launcher is needed for website chat. Source and update instructions are in `hosting/huggingface/DEPLOY.md`. The website uses the official Gradio JavaScript client 2.7.0 through jsDelivr and connects to `lucidpy/lucid-ai-v5`.
+
+## Previous PC-hosted option
 
 After local model setup, put the official Windows `cloudflared.exe` in `runtime/`. This installation uses Cloudflare release `2026.9.1`, SHA-256 `2837888cc0f5d58f15b6dc478376de90b4d3ba5241c7947455d1e0a0df429712`. Install Git, RTK, and authenticate GitHub CLI for repository pushes.
 
-- Run `start-public.cmd` to start the model, gateway, and a free tunnel. It updates `website/backend.json` and pushes the new address to GitHub Pages. Allow the deployment to finish, then reload the website.
+- `start-public.cmd` was used for the old PC/tunnel deployment. It now refuses to overwrite a configured Hugging Face connection. To intentionally restore PC hosting, first replace the cloud configuration in `website/backend.json` with a tunnel configuration.
 - Run `stop-public.cmd` to stop the gateway and tunnel. The local model remains available to your local app.
 - Logs are in `runs/public-host.log`, `runs/public-gateway.log`, and `runs/public-tunnel.log`. Do not commit logs or `local_model.json`.
 

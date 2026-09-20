@@ -1,3 +1,4 @@
 {
-  "url": "https://creek-lid-farm-suppliers.trycloudflare.com"
+  "provider": "huggingface",
+  "space": "lucidpy/lucid-ai-v5"
 }

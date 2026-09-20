@@ -1,5 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
+let apiBase='', publicSession='', connected=false;
+const hosted=!!window.LUCID_STATIC_PREVIEW;
 let state = null, mode = 'chat', lastMessages = '', lastChats = '', lastMemories = '', lastEvents = '', lastNotice = '', polling = false;
 const commands = [
  ['/help','See every command'],['/think','Toggle readable process summaries'],['/forget','Toggle the blank canvas experiment'],
@@ -104,9 +106,31 @@ function render(){
   $('activity-title').textContent=state.busy?'Working on it…':state.error?'Request stopped':'Activity · complete';
   const last=state.events.at(-1)?.text||'Preparing your reply';$('working-text').textContent=last.length>90?last.slice(0,87)+'…':last;
   if(state.notice&&state.notice!==lastNotice){lastNotice=state.notice;toast(state.notice);}if(!state.notice)lastNotice='';
+  publicControls();
 }
-async function poll(){if(polling)return;polling=true;try{const response=await fetch('/api/state');if(!response.ok)throw Error('Connection lost');state=await response.json();render();}catch{$('error-box').hidden=false;$('error-box').textContent='Cannot reach Lucid. Keep the local server terminal open.';}finally{polling=false;}}
-async function request(path,data){if(window.LUCID_STATIC_PREVIEW){toast('AI chat is available in the local app. Follow the setup link above.');return false;}if(!state){toast('Connecting to Lucid…');return false;}try{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Lucid-Token':state.token},body:JSON.stringify(data)});const body=await response.json();if(!response.ok)throw Error(body.error||'Request failed');return true;}catch(error){toast(error.message);return false;}}
+function sessionHeaders(){return hosted?{'X-Lucid-Session':publicSession}:{};}
+async function poll(){
+  if(polling || (hosted&&!publicSession))return;
+  polling=true;
+  try{
+    const response=await fetch(apiBase+'/api/state',{headers:sessionHeaders(),signal:AbortSignal.timeout(12000)});
+    if(!response.ok)throw Error(response.status===401?'Session expired. Reload the page to reconnect.':'Lucid is temporarily unavailable.');
+    state=await response.json();connected=true;render();
+    if(hosted)$('connection-status').textContent='Connected to Lucid AI V5';
+  }catch(error){
+    connected=false;
+    $('error-box').hidden=false;
+    $('error-box').textContent=hosted?(error.message==='Failed to fetch'?'Lucid is offline. The host computer must be on.':error.message):'Cannot reach Lucid. Keep the local server terminal open.';
+    if(hosted){$('connection-status').textContent='Lucid is offline — reconnecting';$('send-button').disabled=true;}
+  }finally{polling=false;}
+}
+async function request(path,data){
+  if(!state || (hosted&&!connected)){toast('Lucid is offline. Please wait for the host to reconnect.');return false;}
+  try{
+    const response=await fetch(apiBase+path,{method:'POST',headers:{'Content-Type':'application/json','X-Lucid-Token':state.token,...sessionHeaders()},body:JSON.stringify(data),signal:AbortSignal.timeout(15000)});
+    const body=await response.json();if(!response.ok)throw Error(body.error||'Request failed');return true;
+  }catch(error){toast(error.message);return false;}
+}
 async function sendCommand(message){if(state?.busy){toast('Let the current reply finish, or stop it first.');return false;}if(await request('/api/message',{message})){state.busy=true;state.error='';render();await poll();return true;}return false;}
 async function waitIdle(){for(let i=0;i<240;i++){await new Promise(r=>setTimeout(r,250));await poll();if(!state.busy)return;}throw Error('The command is taking longer than expected.');}
 async function sendMessage(event){event?.preventDefault();const text=$('prompt').value.trim();if(!text||state?.busy)return;
@@ -134,21 +158,45 @@ $('memory-form').onsubmit=async event=>{event.preventDefault();const text=$('mem
 $('stop-button').onclick=async()=>{if(await request('/api/stop',{})){$('stop-button').disabled=true;$('working-text').textContent='Stopping safely…';}};
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();sendCommand('/new');}if(event.key==='Escape')$('sidebar').classList.remove('open');});
 document.querySelector('.new-chat kbd').textContent=navigator.platform.includes('Mac')?'⌘ K':'Ctrl K';
-showCommands();
-if(window.LUCID_STATIC_PREVIEW){
-  state={messages:[],chats:[],memories:[],events:[],settings:{auto_memory:false,auto_web:false},busy:false,error:'',notice:'',experiment:false,think:false,temperature:0.7,max_tokens:1024};
-  render();
+function publicControls(){
+  if(!hosted)return;
+  document.querySelectorAll('[data-mode="search"],[data-mode="research"],#web-toggle').forEach(node=>{node.disabled=true;node.title='Available in the local app';});
+  $('tokens').max=1024;
+  $('prompt').maxLength=4000;
+  $('send-button').disabled=!connected||!$('prompt').value.trim();
+}
+async function connectPublic(){
   const banner=el('div','hosting-banner');
-  banner.append(el('strong','','Lucid AI · Interface preview'),el('span','','Run the local app to use AI chat, memory, and web research.'));
-  const setup=el('a','','Get the app & setup instructions ↗');
-  setup.href='https://github.com/Lucidiscool/Lucid-AI-Public#run-the-full-app-locally-windows';
-  setup.target='_blank';setup.rel='noopener noreferrer';banner.append(setup);
+  const status=el('strong','','Connecting to Lucid AI V5…');status.id='connection-status';
+  banner.append(status,el('span','','Runs on the owner’s computer. Chats pass through Cloudflare and are stored temporarily on the host, separately from other visitors. Sessions expire after 1 hour idle.'));
   document.querySelector('.topbar').after(banner);
-  document.querySelector('.model-tag').textContent='Interface preview';
-  document.querySelector('.local-card p').textContent='Run locally to start chatting.';
-  document.querySelector('.welcome > p').textContent='Ask a question. Explore an idea. Make something great. Download the local app to begin.';
-  document.querySelector('.composer-footer > span').textContent='GitHub Pages · Interface preview';
-  $('prompt').placeholder='AI chat is available in the local app';
-  $('prompt').disabled=true;
-  document.querySelectorAll('[data-command],[data-mode],[data-prompt],#send-button,.switch,#apply-settings,#memory-form input,#memory-form button,#temperature,#tokens').forEach(node=>node.disabled=true);
-}else{poll();setInterval(poll,600);}
+  document.querySelector('.model-tag').textContent='Lucid V5 · Qwen 3 · 4B';
+  document.querySelector('.local-card p').textContent='Powered by the owner’s Lucid V5.';
+  document.querySelector('.welcome > p').textContent='Ask a question. Explore an idea. Chat with Lucid AI V5.';
+  document.querySelector('.composer-footer > span').textContent='Lucid V5 · Hosted on the owner’s PC';
+  document.querySelector('#memory-dialog .dialog-intro').textContent='Memories belong only to this temporary visitor session.';
+  document.querySelector('[data-prompt^="/research"]').dataset.prompt='Explain the differences between local and cloud AI assistants.';
+  const unavailable=new Set(['/search','/research','/auto-web','/model','/system']);
+  for(let i=commands.length-1;i>=0;i--)if(unavailable.has(commands[i][0].trim().split(' ')[0]))commands.splice(i,1);
+  showCommands();publicControls();
+  try{
+    const config=await fetch('./backend.json',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(!r.ok)throw Error('Backend not configured.');return r.json();});
+    const url=new URL(config.url);
+    if(url.protocol!=='https:'||!url.hostname.endsWith('.trycloudflare.com')||url.username||url.password)throw Error('Invalid backend address.');
+    apiBase=url.origin;
+    try{publicSession=sessionStorage.getItem('lucid-session:'+apiBase)||'';}catch{}
+    if(publicSession){const check=await fetch(apiBase+'/api/state',{headers:sessionHeaders(),signal:AbortSignal.timeout(12000)});if(!check.ok)publicSession='';}
+    if(!publicSession){
+      const response=await fetch(apiBase+'/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(15000)});
+      const body=await response.json();if(!response.ok)throw Error(body.error||'Could not connect.');
+      publicSession=body.session;try{sessionStorage.setItem('lucid-session:'+apiBase,publicSession);}catch{}
+    }
+    await poll();
+    setInterval(poll,1500);
+  }catch(error){
+    status.textContent='Lucid is offline';
+    $('error-box').hidden=false;$('error-box').textContent='The host computer or connection is unavailable. Reload to try again. '+error.message;
+  }
+}
+showCommands();
+if(hosted){connectPublic();}else{poll();setInterval(poll,600);}

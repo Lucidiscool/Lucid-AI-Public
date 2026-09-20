@@ -2,7 +2,7 @@
 
 Start with `lucidweb` in any terminal, or double-click `start-website.cmd`. The alias `lucid5web` also works. The launcher opens http://127.0.0.1:8765 in your browser. Keep its terminal open; Ctrl+C shuts down the website. Running the launcher again reopens an existing server.
 
-This public source distribution excludes personal data, installed dependencies, model files, runtime binaries, training data, and checkpoints. Follow README.md to install and run it. The hosted GitHub Pages version is an interface preview; the full web app runs locally.
+This public source distribution excludes personal data, installed dependencies, model files, runtime binaries, training data, and checkpoints. Follow README.md to install and run it. The GitHub Pages version connects through the isolated public gateway to the owner's running V5 model. The original local server remains local-only.
 
 The browser has streaming chat, saved-conversation navigation, Markdown/code rendering and copying, latest-answer feedback, automatic memory controls, web search and research modes, visible activity, a memory manager, and developer controls. `/help` opens a searchable command library. Type slash commands into the composer as in the terminal. Search/Research buttons prefix your message with the corresponding command; explicit slash commands take precedence.
 

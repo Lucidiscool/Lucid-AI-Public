@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from dev_chat import DeveloperChat
+from admin_service import admin
 from website_server import Workspace, BrowserBackend
 
 ORIGIN = 'https://lucidiscool.github.io'
@@ -33,6 +34,7 @@ class PublicWorkspace(Workspace):
                 if self.error and self.error != 'Stopped by you.':
                     self.error = 'Lucid could not finish this reply. Try a shorter message or a new conversation.'
         finally:
+            admin.record(self.visitor, text, self.snapshot()['messages'], self.error)
             self.gate.release()
 
 
@@ -66,6 +68,7 @@ class Sessions:
             workspace = PublicWorkspace(app=app)
             workspace.stop = stop
             workspace.gate = self.gate
+            workspace.visitor = secrets.token_hex(8)
             token = secrets.token_urlsafe(32)
             self.items[token] = {'workspace': workspace, 'directory': directory,
                                  'seen': now, 'requests': deque(), 'count': 0}
@@ -169,6 +172,10 @@ def make_handler(sessions):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError('Expected a JSON object.')
+                if self.path == '/api/admin/login':
+                    return self.send(200, admin.login(body.get('password')))
+                if self.path == '/api/admin/action':
+                    return self.send(200, admin.action(body.get('token'), body.get('action'), body.get('url', '')))
                 if self.path == '/api/session':
                     return self.send(201, {'session': sessions.create()})
                 item = sessions.get(self.headers.get('X-Lucid-Session', ''))
@@ -184,7 +191,11 @@ def make_handler(sessions):
                 else:
                     return self.send(404, {'error': 'Not found.'})
                 self.send(202, {'ok': True})
-            except (ValueError, TypeError):
+            except PermissionError as error:
+                self.send(401, {'error': str(error)})
+            except (ValueError, TypeError) as error:
+                if self.path.startswith('/api/admin/'):
+                    return self.send(400, {'error': str(error)})
                 self.send(400, {'error': 'Invalid message or command. Messages: up to 4000 characters; reply tokens: 32–1024. Web research and model configuration are local-only.'})
             except RuntimeError as error:
                 self.send(429, {'error': str(error)})

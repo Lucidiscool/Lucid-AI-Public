@@ -6,6 +6,8 @@ from pathlib import Path
 import tempfile
 import time
 import types
+import secrets
+from admin_service import AdminService
 import unittest
 from dev_chat import DeveloperChat
 from chat_store import ChatStore
@@ -24,7 +26,7 @@ def load_session_code():
         def start(self): pass
         def answer(self, messages, **kwargs):
             return messages + [{'role': 'assistant', 'content': 'Test answer: '+messages[-1]['content']}]
-    scope = dict(copy=copy, json=json, tempfile=tempfile, time=time, Path=Path,
+    scope = dict(copy=copy, json=json, tempfile=tempfile, time=time, Path=Path, secrets=secrets, admin=AdminService(),
                  DeveloperChat=DeveloperChat, ChatStore=ChatStore,
                  CloudBackend=FakeBackend, gr=types.SimpleNamespace(Error=ValueError))
     exec(compile(ast.Module(body=keep, type_ignores=[]), str(path), 'exec'), scope)

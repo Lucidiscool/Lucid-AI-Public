@@ -1,6 +1,8 @@
 import json
 import threading
 import unittest
+from unittest.mock import patch
+from admin_service import AdminService
 from http.server import ThreadingHTTPServer
 import httpx
 from public_server import Sessions, make_handler, ORIGIN, PORT
@@ -45,6 +47,26 @@ class PublicTests(unittest.TestCase):
         finally: self.sessions.gate.release()
         for _ in range(11): self.sessions.create()
         with self.assertRaises(RuntimeError): self.sessions.create()
+
+    def test_admin_http_requires_separate_credential(self):
+        service = AdminService('test-only-admin-passphrase')
+        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.sessions))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with patch('public_server.admin', service), httpx.Client(base_url=f'http://127.0.0.1:{server.server_port}', trust_env=False) as client:
+                headers = {'Host': f'127.0.0.1:{PORT}', 'Origin': ORIGIN}
+                self.assertEqual(client.post('/api/admin/login', json={'password': 'test-only-admin-passphrase'}).status_code, 403)
+                visitor = self.sessions.create()
+                self.assertEqual(client.post('/api/admin/action', headers=headers, json={'token': visitor, 'action': 'dashboard'}).status_code, 401)
+                response = client.post('/api/admin/login', headers=headers, json={'password': 'test-only-admin-passphrase'})
+                self.assertEqual(response.status_code, 200)
+                token = response.json()['token']
+                self.assertEqual(client.post('/api/admin/action', headers=headers, json={'token': token, 'action': 'dashboard'}).status_code, 200)
+                client.post('/api/admin/action', headers=headers, json={'token': token, 'action': 'logout'})
+                self.assertEqual(client.post('/api/admin/action', headers=headers, json={'token': token, 'action': 'dashboard'}).status_code, 401)
+        finally:
+            server.shutdown()
+            server.server_close()
 
     def test_http_boundaries(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.sessions))

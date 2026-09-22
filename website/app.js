@@ -183,11 +183,22 @@ async function connectPublic(){
   for(let i=commands.length-1;i>=0;i--)if(unavailable.has(commands[i][0].trim().split(' ')[0]))commands.splice(i,1);
   showCommands();publicControls();
   try{
-    const config=await fetch('./backend.json',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(!r.ok)throw Error('Backend not configured.');return r.json();});
+    let config=await fetch('./backend.json',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(!r.ok)throw Error('Backend not configured.');return r.json();});
+    if(config.provider==='huggingface'){
+      if(config.space!=='lucidpy/lucid-ai-v5')throw Error('Unknown Lucid hosting configuration.');
+      const {Client}=await import('https://cdn.jsdelivr.net/npm/@gradio/client@2.7.0/+esm');
+      cloudClient=await Client.connect(config.space,{events:['data','status']});
+      const info=await cloudClient.view_api();
+      if(info.named_endpoints?.['/hosting_config']){
+        const result=await cloudClient.predict('/hosting_config',[]);
+        config=result.data[0];
+      }
+    }
     if(config.provider==='huggingface')return await connectCloud(config,status,banner);
     const url=new URL(config.url);
     if(url.protocol!=='https:'||!url.hostname.endsWith('.trycloudflare.com')||url.username||url.password)throw Error('Invalid backend address.');
     apiBase=url.origin;
+    banner.querySelector('span').textContent='Runs on the owner’s PC through Cloudflare. The owner can review messages, replies, and feature usage for up to 24 hours (at most 2,000 requests). Do not share sensitive information.';
     try{publicSession=sessionStorage.getItem('lucid-session:'+apiBase)||'';}catch{}
     if(publicSession){const check=await fetch(apiBase+'/api/state',{headers:sessionHeaders(),signal:AbortSignal.timeout(12000)});if(!check.ok)publicSession='';}
     if(!publicSession){
@@ -209,13 +220,13 @@ async function connectCloud(config,status,banner){
   cloudMode=true;
   if(config.space!=='lucidpy/lucid-ai-v5')throw Error('Unknown Lucid hosting configuration.');
   status.textContent='Connecting to hosted Lucid V5…';
-  banner.querySelector('span').textContent='Hosted on Hugging Face, independent of the owner’s PC. Chats and memories are temporary and separate per session. Free GPU queues and daily limits apply.';
+  banner.querySelector('span').textContent='Hosted on Hugging Face. The owner can review messages, replies, and feature usage for up to 24 hours (at most 2,000 requests). Do not share sensitive information. Free GPU queues and limits apply.';
   const link=el('a','','Open hosted app ↗');link.href='https://huggingface.co/spaces/lucidpy/lucid-ai-v5';link.target='_blank';link.rel='noopener noreferrer';banner.append(link);
   document.querySelector('.local-card p').textContent='Lucid V5 · Free cloud hosting';
   document.querySelector('.composer-footer > span').textContent='Lucid V5 · Hugging Face ZeroGPU';
   document.querySelector('[data-prompt^="Explain the differences"] > span:last-child').textContent='Explore an idea together ↗';
   const {Client}=await import('https://cdn.jsdelivr.net/npm/@gradio/client@2.7.0/+esm');
-  cloudClient=await Client.connect(config.space,{events:['data','status']});
+  cloudClient=cloudClient||await Client.connect(config.space,{events:['data','status']});
   state={messages:[],chats:[],memories:[],events:[],settings:{auto_memory:false,auto_web:false},busy:false,error:'',notice:'',experiment:false,think:false,temperature:0.6,max_tokens:384};
   connected=true;status.textContent='Connected to hosted Lucid AI V5';render();
 }

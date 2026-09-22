@@ -3,6 +3,8 @@ import copy
 import json
 import tempfile
 import time
+import secrets
+from admin_service import admin
 from pathlib import Path
 
 import spaces
@@ -84,6 +86,7 @@ def chat(message, session):
     if not isinstance(message, str) or not 1 <= len(message.strip()) <= 4000:
         raise gr.Error('Enter a message of 1–4000 characters.')
     session = copy.deepcopy(session or {})
+    visitor = session.get('visitor') or secrets.token_hex(8)
     if session.get('requests', 0) >= 100:
         raise gr.Error('Session limit reached. Reload to start a new session.')
     message = message.strip()
@@ -125,6 +128,7 @@ def chat(message, session):
         try:
             app.handle(message)
         except Exception as error:
+            admin.record(visitor, message, [], 'failed')
             # Gradio shows quota/queue failures without leaking host filesystem paths.
             raise gr.Error('Lucid could not finish this request. '+str(error)[:350]) from None
         if message in ('/new', '/reset') or message.startswith('/load ') or was_blank != (app.blank is not None):
@@ -137,6 +141,8 @@ def chat(message, session):
                     'chat_id': app.identifier, 'seconds': app.last_seconds, 'turns': app.turns}
         saved = {key: copy.deepcopy(getattr(app, key)) for key in ATTRS}
         saved.update(files=app.store.files, messages=messages, requests=session.get('requests', 0)+1)
+        saved['visitor'] = visitor
+        admin.record(saved['visitor'], message, messages)
     return messages, snapshot, saved
 
 
@@ -144,7 +150,7 @@ with gr.Blocks() as demo:
     gr.Markdown('# Lucid AI V5\nYour V5 app, running on free Hugging Face GPUs. '
                 'Same Qwen3-4B-Instruct-2507 model in BF16 rather than the local Q4 GGUF. '
                 'No owner computer required. Free GPU quotas and queues apply. '
-                'Visitor chats and memories stay in separate temporary sessions. '
+                'The site owner can review messages, replies, and feature usage for up to 24 hours (at most 2,000 requests). Do not share sensitive information. '
                 'Web research is available only in the local app.')
     conversation = gr.Chatbot(label='Lucid V5', height=420)
     prompt = gr.Textbox(label='Message Lucid', placeholder='What is on your mind?', max_lines=6)
@@ -154,4 +160,13 @@ with gr.Blocks() as demo:
     inputs, outputs = [prompt, session], [conversation, snapshot, session]
     send.click(chat, inputs, outputs, api_name='chat', concurrency_limit=1)
     prompt.submit(chat, inputs, outputs, api_name=False, concurrency_limit=1)
+    # All private reads and mutations authenticate inside the server function.
+    admin_password = gr.Textbox(type='password', visible=False)
+    admin_token = gr.Textbox(visible=False)
+    admin_action = gr.Textbox(visible=False)
+    admin_url = gr.Textbox(visible=False)
+    admin_result = gr.JSON(visible=False)
+    gr.Button(visible=False).click(admin.login, [admin_password], admin_result, api_name='admin_login', queue=False)
+    gr.Button(visible=False).click(admin.action, [admin_token, admin_action, admin_url], admin_result, api_name='admin_action', queue=False)
+    gr.Button(visible=False).click(admin.config, [], admin_result, api_name='hosting_config', queue=False)
 demo.queue(max_size=20).launch()

@@ -146,6 +146,20 @@ def chat(message, session):
     return messages, snapshot, saved
 
 
+def admin_login(password):
+    try:
+        return admin.login(password)
+    except (ValueError, PermissionError) as error:
+        raise gr.Error(str(error)) from None
+
+
+def admin_action_request(token, action, url=''):
+    try:
+        return admin.action(token, action, url)
+    except (ValueError, PermissionError) as error:
+        raise gr.Error(str(error)) from None
+
+
 with gr.Blocks() as demo:
     gr.Markdown('# Lucid AI V5\nYour V5 app, running on free Hugging Face GPUs. '
                 'Same Qwen3-4B-Instruct-2507 model in BF16 rather than the local Q4 GGUF. '
@@ -166,7 +180,7 @@ with gr.Blocks() as demo:
     admin_action = gr.Textbox(visible=False)
     admin_url = gr.Textbox(visible=False)
     admin_result = gr.JSON(visible=False)
-    gr.Button(visible=False).click(admin.login, [admin_password], admin_result, api_name='admin_login', queue=False)
-    gr.Button(visible=False).click(admin.action, [admin_token, admin_action, admin_url], admin_result, api_name='admin_action', queue=False)
+    gr.Button(visible=False).click(admin_login, [admin_password], admin_result, api_name='admin_login', queue=False)
+    gr.Button(visible=False).click(admin_action_request, [admin_token, admin_action, admin_url], admin_result, api_name='admin_action', queue=False)
     gr.Button(visible=False).click(admin.config, [], admin_result, api_name='hosting_config', queue=False)
 demo.queue(max_size=20).launch()

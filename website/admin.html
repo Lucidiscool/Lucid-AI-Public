@@ -4,7 +4,7 @@
 <header><a href="./">← Back to Lucid</a><span>OWNER WORKSPACE</span></header>
 <h1>A clearer view of Lucid.</h1><p>Hosting, recent conversations, and the features people use.</p>
 <p id="status" role="status">Connecting to the admin service…</p>
-<form id="login"><label>Admin passcode<input id="password" type="password" autocomplete="current-password" minlength="16" maxlength="512" required></label><button id="sign-in" disabled>Sign in</button><p>Your passcode is verified by the server. Set it in the Hugging Face Space’s secrets as LUCID_ADMIN_PASSCODE (at least 16 characters).</p></form>
+<form id="login"><label>Admin passcode<input id="password" type="password" autocomplete="current-password" minlength="4" maxlength="512" required></label><button id="sign-in" disabled>Sign in</button><p>Your passcode is verified privately by the server.</p></form>
 <section id="dashboard" hidden>
 <div class="actions"><button id="refresh">Refresh</button><button id="logout">Sign out</button></div>
 <section class="card"><span class="eyebrow">HOSTING</span><h2 id="host">Loading…</h2><p>The website stays on GitHub Pages. Choose where the AI runs. Changes apply to new connections and reloads.</p><div class="actions"><button id="local">Enable local hosting</button><button id="cloud">Use cloud hosting</button></div><p>The cloud control service must stay available. A cloud restart resets selection to cloud hosting. Switching does not move existing chats or stop the PC process.</p></section>

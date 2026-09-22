@@ -22,8 +22,8 @@ def main():
     args = parser.parse_args()
     if args.admin:
         password = getpass.getpass('Enter the same admin passcode as your cloud Space (input is hidden): ')
-        if not 16 <= len(password) <= 512:
-            parser.error('The admin passcode must contain 16–512 characters.')
+        if not 4 <= len(password) <= 512:
+            parser.error('The admin passcode must contain 4–512 characters.')
         os.environ['LUCID_ADMIN_PASSCODE'] = password
     if not (ROOT / 'runtime/cloudflared.exe').is_file():
         raise RuntimeError('Missing runtime/cloudflared.exe. Install Cloudflare Tunnel from its official distribution before starting.')

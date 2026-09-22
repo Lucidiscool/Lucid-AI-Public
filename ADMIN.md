@@ -6,8 +6,8 @@ The website stays on GitHub Pages. Its Admin panel uses the existing Hugging Fac
 
 1. Deploy the website changes through the existing Pages workflow.
 2. Update the Hugging Face Space using `hosting/huggingface/DEPLOY.md`, including **admin_service.py** from the repository root.
-3. In the Space Settings → Variables and secrets, add a **Secret** named `LUCID_ADMIN_PASSCODE`. Choose a unique 16–512 character passphrase. Do not use a public Variable, commit it, or put it in backend.json. Restart the Space after changing the secret.
-4. Open the website's Admin panel and sign in. Login sessions last 30 minutes and are kept only in browser memory. Five login attempts per minute are allowed across the server. Without a sufficiently long secret, admin access is disabled.
+3. In the Space Settings → Variables and secrets, add a **Secret** named `LUCID_ADMIN_PASSCODE`. A 4–512 character passcode is supported. Do not use a public Variable, commit it, or put it in backend.json. Restart the Space after changing the secret.
+4. Open the website's Admin panel and sign in. Login sessions last 30 minutes and are kept only in browser memory. Passcodes shorter than 12 characters allow five login attempts per hour across the server; longer passcodes allow five per minute. Without a configured secret, admin access is disabled.
 
 Hugging Face secret documentation: https://huggingface.co/docs/hub/spaces-overview#managing-secrets-and-environment-variables
 

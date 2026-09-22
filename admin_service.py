@@ -14,7 +14,8 @@ class AdminService:
     def __init__(self, passcode=None):
         password = os.environ.get('LUCID_ADMIN_PASSCODE', '') if passcode is None else passcode
         self.salt = secrets.token_bytes(16)
-        self.digest = self.hash(password) if 16 <= len(password) <= 512 else None
+        self.digest = self.hash(password) if 4 <= len(password) <= 512 else None
+        self.login_window = 3600 if len(password) < 12 else 60
         self.lock = threading.RLock()
         self.attempts = deque()
         self.tokens = {}
@@ -28,13 +29,13 @@ class AdminService:
     def login(self, password):
         with self.lock:
             now = time.monotonic()
-            while self.attempts and self.attempts[0] < now - 60:
+            while self.attempts and self.attempts[0] < now - self.login_window:
                 self.attempts.popleft()
             if len(self.attempts) >= 5:
-                raise ValueError('Too many login attempts. Wait one minute.')
+                raise ValueError('Too many login attempts. Try again later.')
             self.attempts.append(now)
             if not self.digest:
-                raise ValueError('Admin is disabled. Set LUCID_ADMIN_PASSCODE to at least 16 characters on the server.')
+                raise ValueError('Admin is disabled. Set LUCID_ADMIN_PASSCODE to at least 4 characters on the server.')
             if not isinstance(password, str) or len(password) > 512 or not hmac.compare_digest(self.hash(password), self.digest):
                 raise ValueError('Invalid passcode.')
             self.tokens = {t: expiry for t, expiry in self.tokens.items() if expiry > now}

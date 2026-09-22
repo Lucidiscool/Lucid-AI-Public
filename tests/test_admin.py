@@ -20,6 +20,16 @@ class AdminTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.admin.action(token, 'dashboard')
 
+    def test_four_digit_passcode_and_stricter_attempt_limit(self):
+        service = AdminService('7281')
+        token = service.login('7281')['token']
+        self.assertEqual(service.action(token, 'dashboard')['requests'], 0)
+        self.assertEqual(service.login_window, 3600)
+        for _ in range(4):
+            with self.assertRaises(ValueError): service.login('wrong')
+        with self.assertRaisesRegex(ValueError, 'Too many'):
+            service.login('7281')
+
     def test_expiry_rate_limit_and_disabled_by_default(self):
         with self.assertRaises(ValueError):
             AdminService('').login('anything')

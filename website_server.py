@@ -158,6 +158,11 @@ def make_handler(workspace, port):
                 return self.send(200, {'app': 'lucid-v5-web'})
             if self.path == '/api/state':
                 return self.send(200, workspace.snapshot())
+            if self.path == '/admin.html':
+                self.send_response(302)
+                self.send_header('Location', 'https://lucidiscool.github.io/Lucid-AI-Public/admin.html')
+                self.end_headers()
+                return
             files = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'),
                      '/style.css': ('style.css', 'text/css'), '/logo.svg': ('logo.svg', 'image/svg+xml')}
             if self.path in files:

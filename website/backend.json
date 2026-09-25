@@ -1,4 +1,4 @@
 {
-  "provider": "huggingface",
-  "space": "lucidpy/lucid-ai-v5"
+  "provider": "local",
+  "url": ""
 }

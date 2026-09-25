@@ -175,7 +175,7 @@ def make_handler(sessions):
                 if self.path == '/api/admin/login':
                     return self.send(200, admin.login(body.get('password')))
                 if self.path == '/api/admin/action':
-                    return self.send(200, admin.action(body.get('token'), body.get('action'), body.get('url', '')))
+                    return self.send(200, admin.action(body.get('token'), body.get('action')))
                 if self.path == '/api/session':
                     return self.send(201, {'session': sessions.create()})
                 item = sessions.get(self.headers.get('X-Lucid-Session', ''))

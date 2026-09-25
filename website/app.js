@@ -1,7 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let apiBase='', publicSession='', connected=false;
-let cloudClient=null, cloudMode=false;
 const hosted=!!window.LUCID_STATIC_PREVIEW;
 let state = null, mode = 'chat', lastMessages = '', lastChats = '', lastMemories = '', lastEvents = '', lastNotice = '', polling = false;
 const commands = [
@@ -111,7 +110,6 @@ function render(){
 }
 function sessionHeaders(){return hosted?{'X-Lucid-Session':publicSession}:{};}
 async function poll(){
-  if(cloudMode)return;
   if(polling || (hosted&&!publicSession))return;
   polling=true;
   try{
@@ -133,7 +131,7 @@ async function request(path,data){
     const body=await response.json();if(!response.ok)throw Error(body.error||'Request failed');return true;
   }catch(error){toast(error.message);return false;}
 }
-async function sendCommand(message){if(state?.busy){toast('Let the current reply finish, or stop it first.');return false;}if(cloudMode)return sendCloud(message);if(await request('/api/message',{message})){state.busy=true;state.error='';render();await poll();return true;}return false;}
+async function sendCommand(message){if(state?.busy){toast('Let the current reply finish, or stop it first.');return false;}if(await request('/api/message',{message})){state.busy=true;state.error='';render();await poll();return true;}return false;}
 async function waitIdle(){for(let i=0;i<240;i++){await new Promise(r=>setTimeout(r,250));await poll();if(!state.busy)return;}throw Error('The command is taking longer than expected.');}
 async function sendMessage(event){event?.preventDefault();const text=$('prompt').value.trim();if(!text||state?.busy)return;
   if(text==='/help'){openDialog('commands-dialog');$('prompt').value='';return;}
@@ -163,8 +161,7 @@ document.querySelector('.new-chat kbd').textContent=navigator.platform.includes(
 function publicControls(){
   if(!hosted)return;
   document.querySelectorAll('[data-mode="search"],[data-mode="research"],#web-toggle').forEach(node=>{node.disabled=true;node.title='Available in the local app';});
-  $('tokens').max=cloudMode?512:1024;
-  if(cloudMode){$('stop-button').disabled=true;$('stop-button').title='The cloud request is running. Wait for the reply.';}
+  $('tokens').max=1024;
   $('prompt').maxLength=4000;
   $('send-button').disabled=!connected||!$('prompt').value.trim();
 }
@@ -176,25 +173,15 @@ async function connectPublic(){
   document.querySelector('.model-tag').textContent='Lucid V5 · Qwen 3 · 4B';
   document.querySelector('.local-card p').textContent='Powered by the owner’s Lucid V5.';
   document.querySelector('.welcome > p').textContent='Ask a question. Explore an idea. Chat with Lucid AI V5.';
-  document.querySelector('.composer-footer > span').textContent='Lucid V5 · Hosted on the owner’s PC';
+  document.querySelector('.composer-footer > span').textContent='Lucid V5 · Running on the owner’s PC';
   document.querySelector('#memory-dialog .dialog-intro').textContent='Memories belong only to this temporary visitor session.';
-  document.querySelector('[data-prompt^="/research"]').dataset.prompt='Explain the differences between local and cloud AI assistants.';
+  document.querySelector('[data-prompt^="/research"]').dataset.prompt='What changes when an AI runs locally on my computer?';
   const unavailable=new Set(['/search','/research','/auto-web','/model','/system']);
   for(let i=commands.length-1;i>=0;i--)if(unavailable.has(commands[i][0].trim().split(' ')[0]))commands.splice(i,1);
   showCommands();publicControls();
   try{
     let config=await fetch('./backend.json',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(!r.ok)throw Error('Backend not configured.');return r.json();});
-    if(config.provider==='huggingface'){
-      if(config.space!=='lucidpy/lucid-ai-v5')throw Error('Unknown Lucid hosting configuration.');
-      const {Client}=await import('https://cdn.jsdelivr.net/npm/@gradio/client@2.7.0/+esm');
-      cloudClient=await Client.connect(config.space,{events:['data','status']});
-      const info=await cloudClient.view_api();
-      if(info.named_endpoints?.['/hosting_config']){
-        const result=await cloudClient.predict('/hosting_config',[]);
-        config=result.data[0];
-      }
-    }
-    if(config.provider==='huggingface')return await connectCloud(config,status,banner);
+    if(config.provider!=='local')throw Error('Lucid is configured to run on your PC only.');
     const url=new URL(config.url);
     if(url.protocol!=='https:'||!url.hostname.endsWith('.trycloudflare.com')||url.username||url.password)throw Error('Invalid backend address.');
     apiBase=url.origin;
@@ -216,47 +203,3 @@ async function connectPublic(){
 showCommands();
 if(hosted){connectPublic();}else{poll();setInterval(poll,600);}
 
-async function connectCloud(config,status,banner){
-  cloudMode=true;
-  if(config.space!=='lucidpy/lucid-ai-v5')throw Error('Unknown Lucid hosting configuration.');
-  status.textContent='Connecting to hosted Lucid V5…';
-  banner.querySelector('span').textContent='Hosted on Hugging Face. The owner can review messages, replies, and feature usage for up to 24 hours (at most 2,000 requests). Do not share sensitive information. Free GPU queues and limits apply.';
-  const link=el('a','','Open hosted app ↗');link.href='https://huggingface.co/spaces/lucidpy/lucid-ai-v5';link.target='_blank';link.rel='noopener noreferrer';banner.append(link);
-  document.querySelector('.local-card p').textContent='Lucid V5 · Free cloud hosting';
-  document.querySelector('.composer-footer > span').textContent='Lucid V5 · Hugging Face ZeroGPU';
-  document.querySelector('[data-prompt^="Explain the differences"] > span:last-child').textContent='Explore an idea together ↗';
-  const {Client}=await import('https://cdn.jsdelivr.net/npm/@gradio/client@2.7.0/+esm');
-  cloudClient=cloudClient||await Client.connect(config.space,{events:['data','status']});
-  state={messages:[],chats:[],memories:[],events:[],settings:{auto_memory:false,auto_web:false},busy:false,error:'',notice:'',experiment:false,think:false,temperature:0.6,max_tokens:384};
-  connected=true;status.textContent='Connected to hosted Lucid AI V5';render();
-}
-
-async function sendCloud(message){
-  if(!cloudClient||!connected){toast('Lucid is connecting. Please wait.');return false;}
-  const previous=JSON.parse(JSON.stringify(state));
-  state.busy=true;state.error='';state.notice='';
-  if(!message.startsWith('/')||message.startsWith('/teach '))state.messages.push({role:'user',content:message});
-  state.events=[{time:'',text:'Waiting for a free GPU…'}];render();
-  let received=false;
-  try{
-    const job=cloudClient.submit('/chat',[message]);
-    for await(const event of job){
-      if(event.type==='status'){
-        if(event.stage==='error'||event.success===false)throw Error(event.message||'The cloud request failed.');
-        if(event.stage==='complete')continue;
-        const label=event.stage==='pending'?'Waiting in the free GPU queue…':'Lucid is preparing your reply…';
-        state.events=[{time:'',text:label}];render();
-      }
-      if(event.type==='data'){
-        const snapshot=event.data.find(value=>value&&Array.isArray(value.messages)&&value.settings);
-        if(!snapshot)throw Error('Unexpected response from Lucid.');
-        state=snapshot;received=true;render();
-      }
-    }
-    if(!received)throw Error('No reply received. Please try again.');
-    return true;
-  }catch(error){
-    state=previous;state.error=String(error.message||error)+ ' Free GPU usage may be exhausted; open the hosted app for account and quota details.';
-    return false;
-  }finally{state.busy=false;render();}
-}

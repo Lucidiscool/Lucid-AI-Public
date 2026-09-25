@@ -1,6 +1,5 @@
 import time
 import unittest
-from unittest.mock import patch, Mock
 from admin_service import AdminService
 
 
@@ -21,14 +20,14 @@ class AdminTests(unittest.TestCase):
             self.admin.action(token, 'dashboard')
 
     def test_four_digit_passcode_and_stricter_attempt_limit(self):
-        service = AdminService('7281')
-        token = service.login('7281')['token']
+        service = AdminService('3553')
+        token = service.login('3553')['token']
         self.assertEqual(service.action(token, 'dashboard')['requests'], 0)
         self.assertEqual(service.login_window, 3600)
         for _ in range(4):
             with self.assertRaises(ValueError): service.login('wrong')
         with self.assertRaisesRegex(ValueError, 'Too many'):
-            service.login('7281')
+            service.login('3553')
 
     def test_expiry_rate_limit_and_disabled_by_default(self):
         with self.assertRaises(ValueError):
@@ -56,18 +55,11 @@ class AdminTests(unittest.TestCase):
         self.assertEqual(self.admin.action(token, 'dashboard')['requests'], 0)
         self.assertNotIn('activity', self.admin.config())
 
-    def test_only_healthy_https_pc_host_can_be_selected(self):
+    def test_pc_is_the_only_host_and_cloud_switch_is_removed(self):
         token = self.admin.login('test-only-passphrase-123')['token']
-        for url in ('http://127.0.0.1', 'https://evil.test', 'https://x.trycloudflare.com@evil.test', 'https://x.trycloudflare.com/path'):
-            with self.assertRaises(ValueError): self.admin.action(token, 'local', url)
-        with patch('httpx.get', side_effect=RuntimeError('offline')):
-            with self.assertRaises(ValueError): self.admin.action(token, 'local', 'https://test.trycloudflare.com')
-        self.assertEqual(self.admin.config()['provider'], 'huggingface')
-        with patch('httpx.get', return_value=Mock(status_code=200, json=lambda: {'app': 'lucid-v5-public'})):
-            self.admin.action(token, 'local', 'https://test.trycloudflare.com')
-        self.assertEqual(self.admin.config()['provider'], 'local')
-        self.admin.action(token, 'cloud')
-        self.assertEqual(self.admin.config()['provider'], 'huggingface')
+        self.assertEqual(self.admin.config(), {'provider': 'local'})
+        self.assertEqual(self.admin.action(token, 'dashboard')['hosting'], {'provider': 'local'})
+        with self.assertRaises(ValueError): self.admin.action(token, 'cloud')
 
 
 if __name__ == '__main__':

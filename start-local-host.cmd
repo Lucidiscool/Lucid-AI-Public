@@ -7,5 +7,5 @@ if not exist "%LUCID_PYTHON%" (
   pause
   exit /b 1
 )
-"%LUCID_PYTHON%" -u host_public.py --admin
+"%LUCID_PYTHON%" -u host_public.py --admin --publish
 pause

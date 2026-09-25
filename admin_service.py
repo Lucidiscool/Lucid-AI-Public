@@ -3,7 +3,6 @@ import copy
 import hashlib
 import hmac
 import os
-import re
 import secrets
 import threading
 import time
@@ -21,7 +20,7 @@ class AdminService:
         self.tokens = {}
         self.activity = deque(maxlen=2000)
         self.started = time.time()
-        self.host = {'provider': 'huggingface', 'space': 'lucidpy/lucid-ai-v5'}
+        self.host = {'provider': 'local'}
 
     def hash(self, password):
         return hashlib.scrypt(password.encode(), salt=self.salt, n=16384, r=8, p=1)
@@ -66,27 +65,13 @@ class AdminService:
         while self.activity and self.activity[0]['time'] < time.time() - 86400:
             self.activity.popleft()
 
-    def action(self, token, action, url=''):
+    def action(self, token, action):
         with self.lock:
             self.authorize(token)
             if action == 'logout':
                 self.tokens.pop(token, None)
                 return {'ok': True}
-            if action == 'local':
-                if not isinstance(url, str) or not re.fullmatch(r'https://[a-z0-9-]+\.trycloudflare\.com', url):
-                    raise ValueError('Enter the HTTPS trycloudflare.com address printed by the launcher, without a trailing slash.')
-                # Verify the selected service before switching all new connections.
-                import httpx
-                try:
-                    response = httpx.get(url + '/api/health', headers={'Origin': 'https://lucidiscool.github.io'}, timeout=10, follow_redirects=False)
-                    if response.status_code != 200 or response.json().get('app') != 'lucid-v5-public':
-                        raise ValueError()
-                except Exception:
-                    raise ValueError('The PC host did not pass its health check. Keep the launcher running and check the address.') from None
-                self.host = {'provider': 'local', 'url': url}
-            elif action == 'cloud':
-                self.host = {'provider': 'huggingface', 'space': 'lucidpy/lucid-ai-v5'}
-            elif action != 'dashboard':
+            if action != 'dashboard':
                 raise ValueError('Unknown admin action.')
             self.prune()
             rows = list(self.activity)

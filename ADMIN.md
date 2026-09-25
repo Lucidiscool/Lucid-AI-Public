@@ -1,34 +1,20 @@
 # Lucid admin setup
 
-The website stays on GitHub Pages. Its Admin panel uses the existing Hugging Face Space as the control service. Password checks, activity, and hosting selection run on the backend; there is no password in website code or GitHub configuration.
+Lucid AI runs on your PC. The GitHub Pages site contains only the browser interface; it sends chat requests to the temporary HTTPS tunnel started by your PC. When the PC host is stopped or asleep, chat and the Admin panel are unavailable. No hosted model service is used.
 
-## Deploy
+## Start the PC host
 
-1. Deploy the website changes through the existing Pages workflow.
-2. Update the Hugging Face Space using `hosting/huggingface/DEPLOY.md`, including **admin_service.py** from the repository root.
-3. In the Space Settings → Variables and secrets, add a **Secret** named `LUCID_ADMIN_PASSCODE`. A 4–512 character passcode is supported. Do not use a public Variable, commit it, or put it in backend.json. Restart the Space after changing the secret.
-4. Open the website's Admin panel and sign in. Login sessions last 30 minutes and are kept only in browser memory. Passcodes shorter than 12 characters allow five login attempts per hour across the server; longer passcodes allow five per minute. Without a configured secret, admin access is disabled.
+1. Deploy the website assets through the existing GitHub Pages workflow.
+2. Start `start-local-host.cmd` (or `start-public.cmd`) in this folder. The launcher asks for the admin passcode using hidden input. Enter `3553`.
+3. The launcher starts the existing local model, the isolated public gateway, and a temporary Cloudflare tunnel. It updates `website/backend.json` with the tunnel address and pushes that one config file to the `main` branch so the Pages site can reach this running PC.
+4. Keep the terminal open and the computer awake. Open the site and select **Admin panel**. Sign in with `3553`. Stop sharing with Ctrl+C or `stop-public.cmd`.
 
-Hugging Face secret documentation: https://huggingface.co/docs/hub/spaces-overview#managing-secrets-and-environment-variables
+The launcher needs Git, RTK, GitHub CLI authentication with push access, the existing model and `local_model.json`, the `.venv-directml` Python environment (or the sibling `lucid ai v5 web` environment), and `runtime/cloudflared.exe`. It does not install dependencies or download the model. Alternatively, run `python host_public.py --admin --publish` with your configured Python interpreter.
 
-## Switch to the PC
-
-Click **Enable local hosting** and copy `.\start-local-host.cmd` into PowerShell opened in this repository. The launcher uses the existing Python environment and asks for the same admin passcode with hidden input. It starts the local model, bounded public gateway, and Cloudflare tunnel. Paste the HTTPS tunnel address into the panel. The cloud service checks the host before switching new visitor connections.
-
-Prerequisites: the existing local model and `local_model.json`, `.venv-directml` Python environment (or the sibling `lucid ai v5 web` environment), and `runtime/cloudflared.exe`. See README.md for model setup. The launcher does not install dependencies or download a model. Other installations may run `python host_public.py --admin` using their configured Python interpreter.
-
-Keep the terminal open and the PC awake. To return to cloud inference, click **Use cloud hosting**, then stop the PC launcher with Ctrl+C. The switch does not migrate chats or stop processes. Existing visitors stay on their current session until reload. It does not overwrite backend.json or push to GitHub. The older `start-public.cmd --publish` workflow is not used.
+The passcode is checked only by the local gateway. It is not embedded in website assets or saved in the repository. Admin sessions last 30 minutes; five failed attempts are allowed per hour for this four-digit passcode.
 
 ## Activity and limits
 
-The site and direct cloud app disclose owner review of messages, replies, and feature usage. Only new requests after this update are recorded. No access to older browser sessions, the owner's personal chat files, or visitor identity is added. Admin content is rendered as text, not executable HTML.
+The admin panel can review new visitor messages, replies, and feature usage while the PC host is running. Each gateway keeps at most 2,000 request records in RAM for 24 hours; all records disappear when it stops. The panel shows the latest 200. Counts represent sessions, not identified people. Messages are truncated to 4,000 input and 8,000 reply characters. Activity is not written to disk.
 
-Each host keeps at most 2,000 request records in RAM for up to 24 hours, removed on subsequent record/read operations; all disappear on restart. The panel shows the latest 200 and counts across all retained records. These are session counts, not unique people. Chat content is truncated to 4,000 input and 8,000 reply characters. Commands count as features. No persistent analytics database is included.
-
-Select cloud or PC activity in the panel. PC review uses its own server authentication; set the same passcode through the launcher and sign in again after switching hosts. Activity never gets copied between hosts.
-
-The cloud control service must remain available even during PC inference. Hosting selection is in cloud process memory and **resets to cloud after a restart or sleep that restarts the process**. A PC outage does not silently move an active conversation elsewhere. Free GPU quotas and queues still apply to cloud inference.
-
-## Verification
-
-Run `python -m unittest discover -s tests -p test_admin.py -v`, `test_cloud_session.py`, and `test_public_server.py` with the existing Python environment. Run `node --check website/admin.js` and `node --check website/app.js`.
+The public gateway keeps visitors isolated, limits sessions and requests, and exposes only chat endpoints. It does not expose your personal workspace or model server. Visitors' requests pass through Cloudflare's temporary tunnel and your PC. Do not share sensitive information. A tunnel outage does not move inference to another service.

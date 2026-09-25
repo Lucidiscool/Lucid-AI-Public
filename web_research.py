@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from ddgs import DDGS
 
 
-def public_url(url):
+def public_addresses(url):
     parsed = urlparse(url)
     if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError('Only public HTTP(S) pages are supported.')
@@ -22,11 +22,30 @@ def public_url(url):
     addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
     if not addresses or any(not ipaddress.ip_address(a[4][0]).is_global for a in addresses):
         raise ValueError('Local/private network address blocked.')
+    return list(dict.fromkeys(a[4][0] for a in addresses))
+
+
+def public_url(url):
+    public_addresses(url)
     return url
 
 
+class PublicHTTPTransport(httpx.HTTPTransport):
+    """Connect to the validated IP, preserving TLS verification for the hostname."""
+    def handle_request(self, request):
+        addresses = public_addresses(str(request.url))
+        # Pin DNS for the connection so a second lookup cannot target the LAN.
+        address = next((a for a in addresses if ':' not in a), addresses[0])
+        pinned = httpx.Request(request.method, request.url.copy_with(host=address),
+                               headers=request.headers, stream=request.stream,
+                               extensions={**request.extensions, 'sni_hostname': request.url.host})
+        return super().handle_request(pinned)
+
+
 def read_page(url):
-    with httpx.Client(timeout=12, trust_env=False, headers={'User-Agent': 'LucidAI-Research/1.0'}) as client:
+    with httpx.Client(timeout=12, trust_env=False,
+                      transport=PublicHTTPTransport(limits=httpx.Limits(max_keepalive_connections=0)),
+                      headers={'User-Agent': 'LucidAI-Research/1.0'}) as client:
         for _ in range(5):
             public_url(url)
             with client.stream('GET', url) as response:
@@ -38,7 +57,7 @@ def read_page(url):
                     raise ValueError('Unsupported page type (HTML/text only).')
                 content = bytearray()
                 started = time.monotonic()
-                for chunk in response.iter_bytes():
+                for chunk in response.iter_bytes(chunk_size=65536):
                     content.extend(chunk)
                     if len(content) > 1_500_000 or time.monotonic() - started > 20:
                         raise ValueError('Page exceeded reading limit.')
@@ -67,8 +86,30 @@ class Research:
         self.path.write_text(json.dumps(self.record, indent=2, ensure_ascii=False), encoding='utf-8')
 
     def generate(self, instruction, data, tokens):
-        return self.backend.answer([{'role': 'system', 'content': instruction},
-            {'role': 'user', 'content': data}], max_tokens=tokens, temperature=0, display=False)[-1]['content']
+        # Fit evidence to this host's context instead of failing on long pages.
+        while True:
+            try:
+                return self.backend.answer([{'role': 'system', 'content': instruction},
+                    {'role': 'user', 'content': data}], max_tokens=tokens, temperature=0, display=False)[-1]['content']
+            except ValueError as error:
+                if 'too long for the local context' not in str(error) or len(data) < 500:
+                    raise
+                try:
+                    payload = json.loads(data)
+                except (ValueError, TypeError):
+                    payload = None
+                if isinstance(payload, dict) and 'page_text' in payload:
+                    payload['page_text'] = payload['page_text'][:int(len(payload['page_text']) * 0.7)]
+                    reduced = json.dumps(payload)
+                elif isinstance(payload, dict) and 'sources' in payload:
+                    for source in payload['sources']:
+                        source['notes'] = source['notes'][:int(len(source['notes']) * 0.7)]
+                    reduced = json.dumps(payload)
+                else:
+                    reduced = data[:int(len(data) * 0.7)]
+                if len(reduced) >= len(data):
+                    raise
+                data = reduced
 
     def run(self, topic, deep=False):
         topic = topic.strip()
@@ -128,7 +169,7 @@ class Research:
             sources = '\n'.join(f"[{s['id']}] {s['title']} — {s['url']}" for s in self.record['sources'])
             report += '\n\nSources read:\n' + sources
             self.record['report'] = report
-            self.event('Finished. Research log: ' + str(self.path))
+            self.event('Finished. Sources and report saved in this workspace.')
             self.path.with_suffix('.md').write_text(report, encoding='utf-8')
             return report
         except BaseException as error:

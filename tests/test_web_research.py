@@ -3,10 +3,38 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
 import httpx
-from web_research import public_url, read_page, Research
+from web_research import public_url, read_page, Research, PublicHTTPTransport
 
 
 class WebTests(unittest.TestCase):
+    def test_connection_pins_validated_ip_and_preserves_tls_hostname(self):
+        answers = [[(0, 0, 0, '', ('93.184.216.34', 443))],
+                   [(0, 0, 0, '', ('127.0.0.1', 443))]]
+        with patch('web_research.socket.getaddrinfo', side_effect=answers) as dns:
+            with PublicHTTPTransport() as transport, patch.object(httpx.HTTPTransport, 'handle_request') as send:
+                transport.handle_request(httpx.Request('GET', 'https://example.com/article'))
+                pinned = send.call_args.args[0]
+                self.assertEqual(pinned.url.host, '93.184.216.34')
+                self.assertEqual(pinned.headers['host'], 'example.com')
+                self.assertEqual(pinned.extensions['sni_hostname'], 'example.com')
+                self.assertEqual(dns.call_count, 1)
+                with self.assertRaises(ValueError):
+                    transport.handle_request(httpx.Request('GET', 'https://example.com/article'))
+                self.assertEqual(send.call_count, 1)
+
+    def test_long_evidence_is_reduced_without_breaking_json(self):
+        import json
+        with tempfile.TemporaryDirectory() as folder:
+            backend = Mock()
+            backend.answer.side_effect = [ValueError('Message is too long for the local context.'),
+                                         [{'content': 'Extracted evidence.'}]]
+            research = Research(backend, Path(folder), lambda _: None)
+            data = json.dumps({'question': 'Topic', 'page_text': 'a' * 12000})
+            self.assertEqual(research.generate('Extract', data, 230), 'Extracted evidence.')
+            reduced = json.loads(backend.answer.call_args.args[0][1]['content'])
+            self.assertEqual(reduced['question'], 'Topic')
+            self.assertLess(len(reduced['page_text']), 12000)
+
     def test_private_addresses_and_schemes_blocked(self):
         for url in ('file:///etc/passwd', 'http://user:pass@example.com', 'http://example.com:8097'):
             with self.assertRaises(ValueError):

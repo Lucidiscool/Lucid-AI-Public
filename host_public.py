@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import shutil
+import signal
 from pathlib import Path
 import httpx
 from local_chat import Backend
@@ -20,9 +21,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--publish', action='store_true', help='Commit and push the new tunnel address to GitHub Pages')
     parser.add_argument('--admin', action='store_true', help='Prompt privately for the local admin passcode')
+    parser.add_argument('--unattended', action='store_true', help='Require the admin passcode from the service environment')
+    parser.add_argument('--external-model', action='store_true', help='Wait for a separately supervised model server')
     args = parser.parse_args()
-    if args.admin:
-        password = getpass.getpass('Enter your admin passcode (input is hidden): ')
+    if args.admin or args.unattended:
+        password = os.environ.get('LUCID_ADMIN_PASSCODE', '') if args.unattended else getpass.getpass('Enter your admin passcode (input is hidden): ')
         if not 4 <= len(password) <= 512:
             parser.error('The admin passcode must contain 4–512 characters.')
         os.environ['LUCID_ADMIN_PASSCODE'] = password
@@ -45,14 +48,23 @@ def main():
             raise RuntimeError('The public gateway is already running on port 8767.')
     model = Backend()
     print('Starting your existing Lucid V5 model...', flush=True)
-    model.start()
-    model.client.close()
+    if args.external_model:
+        for _ in range(180):
+            if model.ready():
+                break
+            time.sleep(1)
+        else:
+            raise RuntimeError('Supervised model did not become ready.')
+    else:
+        model.start()
     processes = []
     try:
         with (runs / 'public-gateway.log').open('w', encoding='utf-8') as gateway_log, (runs / 'public-tunnel.log').open('w', encoding='utf-8') as tunnel_log:
             gateway = subprocess.Popen([sys.executable, '-u', 'public_server.py'], cwd=ROOT, stdout=gateway_log, stderr=subprocess.STDOUT, creationflags=FLAGS)
             processes.append(gateway)
             for _ in range(30):
+                if gateway.poll() is not None:
+                    raise RuntimeError('Public gateway stopped; inspect runs/public-gateway.log.')
                 try:
                     response = httpx.get('http://127.0.0.1:8767/api/health', headers={'Origin': 'https://lucidiscool.github.io'}, trust_env=False, timeout=2)
                     if response.json().get('app') == 'lucid-v5-public':
@@ -65,7 +77,7 @@ def main():
             tunnel = subprocess.Popen([tunnel_binary, 'tunnel', '--no-autoupdate', '--url', 'http://127.0.0.1:8767', '--http-host-header', '127.0.0.1:8767'], cwd=ROOT, stdout=tunnel_log, stderr=subprocess.STDOUT, creationflags=FLAGS)
             processes.append(tunnel)
             url = None
-            for _ in range(90):
+            for _ in range(180):
                 log = (runs / 'public-tunnel.log').read_text(encoding='utf-8', errors='replace')
                 match = re.search(r'https://[a-z0-9-]+\.trycloudflare\.com', log)
                 if match:
@@ -83,9 +95,14 @@ def main():
                 raise RuntimeError('Tunnel did not become reachable.')
             if args.publish:
                 (ROOT / 'website/backend.json').write_text(json.dumps({'provider': 'local', 'url': url}, indent=2)+'\n', encoding='utf-8')
-                for command in [ ['git','add','website/backend.json'],
-                                 ['git','commit','--only','website/backend.json','-m','Connect website to running Lucid V5 host'],
-                                 ['git','push','origin','main'] ]:
+                commands = []
+                changed = subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'website/backend.json'], cwd=ROOT)
+                if changed.returncode == 1:
+                    commands = [['git','add','website/backend.json'],
+                                ['git','commit','--only','website/backend.json','-m','Connect website to running Lucid V5 host']]
+                elif changed.returncode != 0:
+                    raise RuntimeError('Could not inspect website backend configuration.')
+                for command in commands + [['git','push','origin','main']]:
                     subprocess.run(command, cwd=ROOT, check=True)
             print('Lucid V5 is available through '+url, flush=True)
             print('The website is configured with this PC tunnel address.', flush=True)
@@ -94,8 +111,11 @@ def main():
             while not stop.exists():
                 if any(p.poll() is not None for p in processes):
                     raise RuntimeError('A public hosting process stopped. Restart start-public.cmd.')
+                if not model.ready():
+                    raise RuntimeError('Model stopped; restarting the host is required.')
                 time.sleep(2)
     finally:
+        model.client.close()
         for process in reversed(processes):
             process.terminate()
             try:
@@ -105,4 +125,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    def shutdown(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, shutdown)
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

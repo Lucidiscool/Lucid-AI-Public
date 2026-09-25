@@ -38,6 +38,14 @@ class Backend:
             raise RuntimeError('Port is occupied by a different model server.')
         return True
 
+    def server_command(self):
+        c = self.config
+        return [c['server'], '-m', c['model'], '--device', c.get('device', 'Vulkan0'),
+                '-ngl', str(c['gpu_layers']), '-c', str(c['context']), '-np', '1',
+                '--host', '127.0.0.1', '--port', str(c['port']), '--alias', c['alias'],
+                '--no-webui', '--cors-origins', f"http://127.0.0.1:{c['port']}",
+                '--cache-ram', str(c.get('cache_ram', 256)), '-lv', '4']
+
     def start(self):
         if self.ready():
             return
@@ -46,10 +54,7 @@ class Backend:
         log.parent.mkdir(exist_ok=True)
         print('Loading the local Qwen model. Server log:', log, flush=True)
         with log.open('ab') as output:
-            process = subprocess.Popen([c['server'], '-m', c['model'], '--device', c.get('device', 'Vulkan0'),
-                '-ngl', str(c['gpu_layers']), '-c', str(c['context']), '-np', '1',
-                '--host', '127.0.0.1', '--port', str(c['port']), '--alias', c['alias'],
-                '--no-webui', '--cors-origins', f"http://127.0.0.1:{c['port']}", '-lv', '4'], cwd=ROOT, stdout=output, stderr=subprocess.STDOUT,
+            process = subprocess.Popen(self.server_command(), cwd=ROOT, stdout=output, stderr=subprocess.STDOUT,
                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         for _ in range(120):
             if process.poll() is not None:

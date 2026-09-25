@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let apiBase='', publicSession='', connected=false;
+let connecting=false, lastConnectAttempt=0;
 const hosted=!!window.LUCID_STATIC_PREVIEW;
 let state = null, mode = 'chat', lastMessages = '', lastChats = '', lastMemories = '', lastEvents = '', lastNotice = '', polling = false;
 const commands = [
@@ -129,7 +130,7 @@ async function poll(){
     connected=false;
     $('error-box').hidden=false;
     $('error-box').textContent=hosted?(error.message==='Failed to fetch'?'Lucid is offline. The host computer must be on.':error.message):'Cannot reach Lucid. Keep the local server terminal open.';
-    if(hosted){$('connection-status').textContent='Lucid is offline — reconnecting';$('send-button').disabled=true;}
+    if(hosted){$('connection-status').textContent='Lucid is offline — reconnecting';publicControls();}
   }finally{polling=false;}
 }
 async function request(path,data){
@@ -168,13 +169,19 @@ document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&e
 document.querySelector('.new-chat kbd').textContent=navigator.platform.includes('Mac')?'⌘ K':'Ctrl K';
 function publicControls(){
   if(!hosted)return;
-  document.querySelectorAll('[data-mode="search"],[data-mode="research"],#web-toggle').forEach(node=>{node.disabled=true;node.title='Available in the local app';});
+  document.querySelectorAll('[data-mode="search"],[data-mode="research"]').forEach(node=>{node.disabled=!connected;node.title='Searches and analysis run on the host laptop';});
+  $('web-toggle').disabled=true;
+  $('web-toggle').title='Use Search or Research to request web access';
   $('tokens').max=1024;
   $('prompt').maxLength=4000;
   $('send-button').disabled=!connected||!$('prompt').value.trim();
 }
 async function connectPublic(){
-  const banner=el('div','hosting-banner');
+  if(connecting)return;
+  connecting=true;lastConnectAttempt=Date.now();
+  let banner=document.querySelector('.hosting-banner');
+  if(!banner){
+  banner=el('div','hosting-banner');
   const status=el('strong','','Connecting to Lucid AI V5…');status.id='connection-status';
   banner.append(status,el('span','','Runs on the owner’s computer. Chats, saved memories, and preferences are kept in the owner’s private GitHub repository and its history; the owner can review them. Requests pass through Cloudflare.'));
   document.querySelector('.topbar').after(banner);
@@ -183,17 +190,18 @@ async function connectPublic(){
   document.querySelector('.welcome > p').textContent='Ask a question. Explore an idea. Chat with Lucid AI V5.';
   document.querySelector('.composer-footer > span').textContent='Lucid V5 · Running on the owner’s PC';
   document.querySelector('#memory-dialog .dialog-intro').textContent='Your saved memories are kept with your conversations so they are available on your next visit.';
-  document.querySelector('[data-prompt^="/research"]').dataset.prompt='What changes when an AI runs locally on my computer?';
-  const unavailable=new Set(['/search','/research','/auto-web','/model','/system']);
+  const unavailable=new Set(['/auto-web','/model','/system']);
   for(let i=commands.length-1;i>=0;i--)if(unavailable.has(commands[i][0].trim().split(' ')[0]))commands.splice(i,1);
   showCommands();publicControls();
+  }
+  const status=$('connection-status');
   try{
     let config=await fetch('./backend.json?ts='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(!r.ok)throw Error('PC host address is not available yet. Start start-local-host.cmd on the owner PC.');return r.json();});
     if(config.provider!=='local')throw Error('Lucid is configured to run on your PC only.');
     const url=new URL(config.url);
     if(url.protocol!=='https:'||!url.hostname.endsWith('.trycloudflare.com')||url.username||url.password)throw Error('Invalid backend address.');
     apiBase=url.origin;
-    banner.querySelector('span').textContent='Runs on the owner’s PC through Cloudflare. The owner can review messages, replies, and feature usage for up to 24 hours (at most 2,000 requests). Do not share sensitive information.';
+    banner.querySelector('span').textContent='AI, Search, and Research run on the owner’s laptop through Cloudflare. Search topics go to search providers. Conversations and research are saved in the owner’s private repository and its history.';
     const visitorId=persistentVisitorId();
     try{publicSession=sessionStorage.getItem('lucid-session:'+apiBase)||'';}catch{}
     if(publicSession){const check=await fetch(apiBase+'/api/state',{headers:sessionHeaders(),signal:AbortSignal.timeout(12000)});if(!check.ok)publicSession='';}
@@ -203,12 +211,11 @@ async function connectPublic(){
       publicSession=body.session;try{sessionStorage.setItem('lucid-session:'+apiBase,publicSession);}catch{}
     }
     await poll();
-    setInterval(poll,1500);
   }catch(error){
+    connected=false;publicSession='';publicControls();
     status.textContent='Lucid is offline';
-    $('error-box').hidden=false;$('error-box').textContent='The host computer or connection is unavailable. Reload to try again. '+error.message;
-  }
+    $('error-box').hidden=false;$('error-box').textContent='The host computer or connection is unavailable. Reconnecting automatically. '+error.message;
+  }finally{connecting=false;}
 }
 showCommands();
-if(hosted){connectPublic();}else{poll();setInterval(poll,600);}
-
+if(hosted){connectPublic();setInterval(()=>{if(connecting)return;if(!connected&&Date.now()-lastConnectAttempt>30000)connectPublic();else poll();},1500);}else{poll();setInterval(poll,600);}

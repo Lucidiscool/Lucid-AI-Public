@@ -18,7 +18,7 @@ PORT = 8767
 ALLOWED = {'/new', '/think', '/forget', '/facts', '/teach', '/reset', '/remember',
            '/memories', '/good', '/bad', '/correct', '/feedback', '/unrate', '/chats',
            '/load', '/history', '/save', '/temperature', '/tokens', '/settings', '/stats',
-           '/auto-memory'}
+           '/auto-memory', '/search', '/research'}
 
 
 class PublicWorkspace(Workspace):
@@ -103,7 +103,7 @@ class Sessions:
                 app.identifier, app.history = app.store.load('latest')
             except (ValueError, OSError):
                 pass
-            app.system += ' This public session has no web access. Do not claim you can browse.'
+            app.system += ' Search and research run on the host when explicitly requested. Only claim web research when retrieved sources are supplied.'
             workspace = PublicWorkspace(app=app, data_store=self.data_store, data_identity=identity)
             workspace.stop = stop
             workspace.gate = self.gate
@@ -111,7 +111,7 @@ class Sessions:
             workspace.messages = [dict(message, pending=False) for message in app.history]
             token = secrets.token_urlsafe(32)
             item = {'workspace': workspace, 'directory': directory, 'identity': identity,
-                    'seen': now, 'requests': deque(), 'count': 0}
+                    'seen': now, 'requests': deque(), 'web_requests': deque(), 'count': 0}
             self.items[token] = item
             if self.data_store:
                 self.visitors[identity] = item
@@ -131,6 +131,11 @@ class Sessions:
             raise ValueError('Enter a message of 1–4000 characters.')
         message = message.strip()
         command = message.split()[0]
+        web_request = command in ('/search', '/research')
+        if web_request:
+            topic = message.partition(' ')[2].strip()
+            if not 1 <= len(topic) <= 1000:
+                raise ValueError('Enter a search or research topic of 1–1000 characters.')
         if command.startswith('/') and command not in ALLOWED:
             raise ValueError('That command is available only in the local app.')
         if command == '/tokens':
@@ -145,6 +150,11 @@ class Sessions:
             times = item['requests']
             while times and now - times[0] > 60:
                 times.popleft()
+            web_times = item['web_requests']
+            while web_times and now - web_times[0] > 60:
+                web_times.popleft()
+            if web_request and len(web_times) >= 2:
+                raise RuntimeError('Search/research limit reached. Try again in a minute.')
             if len(times) >= 10 or item['count'] >= 100:
                 raise RuntimeError('Session request limit reached. Please try again later.')
             if not self.gate.acquire(blocking=False):
@@ -152,6 +162,8 @@ class Sessions:
             try:
                 worker = item['workspace'].submit(message)
                 times.append(now)
+                if web_request:
+                    web_times.append(now)
                 item['count'] += 1
                 return worker
             except Exception:
@@ -239,7 +251,7 @@ def make_handler(sessions):
             except (ValueError, TypeError) as error:
                 if self.path.startswith('/api/admin/'):
                     return self.send(400, {'error': str(error)})
-                self.send(400, {'error': 'Invalid message or command. Messages: up to 4000 characters; reply tokens: 32–1024. Web research and model configuration are local-only.'})
+                self.send(400, {'error': 'Invalid message or command. Messages: up to 4000 characters; search/research topics: 1–1000 characters; reply tokens: 32–1024. Model configuration is local-only.'})
             except RuntimeError as error:
                 self.send(429, {'error': str(error)})
             except Exception:

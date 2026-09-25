@@ -54,11 +54,21 @@ class PublicTests(unittest.TestCase):
         self.assertEqual(len(first['workspace'].app.store.memories()), 1)
         self.assertEqual(second['workspace'].app.store.memories(), [])
         self.assertFalse(first['workspace'].app.store.settings()['auto_web'])
-        for text in ['/search http://127.0.0.1', '/auto-web on', '/model', '/system', '/tokens 4096']:
+        for text in ['/search', '/research ' + 'a' * 1001, '/auto-web on', '/model', '/system', '/tokens 4096']:
             with self.assertRaises(ValueError): self.sessions.submit(first, text)
         self.sessions.submit(first, 'Hello').join(5)
         self.assertIn('isolated test model', first['workspace'].snapshot()['messages'][-1]['content'])
         self.assertEqual(second['workspace'].snapshot()['messages'], [])
+
+    def test_search_and_research_run_on_host_with_rate_limit(self):
+        item = self.sessions.get(self.sessions.create())
+        with patch('web_research.Research.run', return_value='Report with sources.') as research:
+            for command in ('/search', '/research'):
+                self.sessions.submit(item, command + ' Python documentation').join(5)
+                research.assert_called_with('Python documentation', deep=command == '/research')
+                self.assertEqual(item['workspace'].snapshot()['error'], '')
+            with self.assertRaisesRegex(RuntimeError, 'Search/research limit'):
+                self.sessions.submit(item, '/search Another topic')
 
     def test_capacity_and_busy(self):
         item = self.sessions.get(self.sessions.create())

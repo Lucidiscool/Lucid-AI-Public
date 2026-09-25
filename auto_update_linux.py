@@ -30,7 +30,7 @@ def model_signature():
         model_stat = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
     except OSError:
         model_stat = None
-    return hashlib.sha256(config_bytes).hexdigest(), str(model), model_stat
+    return [hashlib.sha256(config_bytes).hexdigest(), str(model), model_stat]
 
 
 def local_source_signature():

@@ -50,10 +50,17 @@ class DeveloperChat:
         self.history = []
         self.identifier = 'chat-' + uuid.uuid4().hex
         self.blank = None
-        self.think = False
-        self.temperature = 0.6
-        self.tokens = 768
-        self.system = SYSTEM
+        saved = self.store.read('runtime-settings.json', {})
+        self.think = saved.get('think') is True
+        self.temperature = saved.get('temperature', 0.6)
+        self.tokens = saved.get('tokens', 768)
+        self.system = saved.get('system', SYSTEM)
+        if type(self.temperature) not in (int, float) or not 0 <= self.temperature <= 2:
+            self.temperature = 0.6
+        if type(self.tokens) is not int or not 32 <= self.tokens <= 4096:
+            self.tokens = 768
+        if not isinstance(self.system, str) or len(self.system) > 4000:
+            self.system = SYSTEM
         self.turns = 0
         self.last_seconds = 0
         self.stream = None
@@ -61,6 +68,10 @@ class DeveloperChat:
     def trace(self, text):
         if self.think:
             self.output('[Process summary] ' + text)
+
+    def save_runtime_settings(self):
+        self.store.write('runtime-settings.json', {'think': self.think,
+            'temperature': self.temperature, 'tokens': self.tokens, 'system': self.system})
 
     def engine(self):
         if self.backend is None:
@@ -88,6 +99,7 @@ class DeveloperChat:
             return True
         if command == '/think':
             self.think = self.toggle(self.think, argument)
+            self.save_runtime_settings()
             self.output('Readable process summaries: ' + ('on' if self.think else 'off'))
             return True
         if command == '/forget' and argument in ('', 'on', 'off'):
@@ -124,18 +136,21 @@ class DeveloperChat:
             if not 0 <= value <= 2:
                 raise ValueError('Temperature must be 0–2.')
             self.temperature = value
+            self.save_runtime_settings()
             self.output(f'Temperature: {value}')
         elif command == '/tokens':
             value = int(argument)
             if not 32 <= value <= 4096:
                 raise ValueError('Tokens must be 32–4096.')
             self.tokens = value
+            self.save_runtime_settings()
             self.output(f'Maximum new tokens: {value}')
         elif command == '/system':
             if argument:
                 if len(argument) > 4000:
                     raise ValueError('System prompt limit is 4000 characters.')
                 self.system = SYSTEM if argument == 'reset' else argument
+                self.save_runtime_settings()
             self.output(self.system)
         elif command in ('/auto-memory', '/auto-web'):
             if argument not in ('on', 'off'):
@@ -151,11 +166,13 @@ class DeveloperChat:
             self.output('Saved memory removed. Old transcripts are unchanged.')
         elif command == '/new':
             self.identifier, self.history = 'chat-' + uuid.uuid4().hex, []
+            self.store.activate(self.identifier)
             self.output('New normal chat.')
         elif command == '/chats':
             self.output('\n'.join(f'{i}: {title}' for i, title in self.store.chats()) or 'No saved chats.')
         elif command == '/load':
             self.identifier, self.history = self.store.load(argument)
+            self.store.activate(self.identifier)
             self.output('Loaded: ' + self.identifier)
         elif command == '/history':
             for message in self.history:

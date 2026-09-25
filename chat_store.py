@@ -135,6 +135,12 @@ class ChatStore:
     def save(self, identifier, messages):
         self.check_id(identifier)
         self.write(identifier + '.json', messages)
+        self.activate(identifier)
+
+    def activate(self, identifier):
+        self.check_id(identifier)
+        if not (self.root / (identifier + '.json')).exists():
+            self.write(identifier + '.json', [])
         self.write('latest.json', identifier)
 
     @staticmethod

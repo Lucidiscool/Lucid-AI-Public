@@ -11,6 +11,7 @@ from pathlib import Path
 from dev_chat import DeveloperChat
 from admin_service import admin
 from website_server import Workspace, BrowserBackend
+from visitor_data_store import VisitorDataStore
 
 ORIGIN = 'https://lucidiscool.github.io'
 PORT = 8767
@@ -21,6 +22,11 @@ ALLOWED = {'/new', '/think', '/forget', '/facts', '/teach', '/reset', '/remember
 
 
 class PublicWorkspace(Workspace):
+    def __init__(self, *args, data_store=None, data_identity=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.data_store = data_store
+        self.data_identity = data_identity
+
     def event(self, text):
         # Do not log visitors' memory or conversation contents.
         with self.lock:
@@ -35,43 +41,80 @@ class PublicWorkspace(Workspace):
                     self.error = 'Lucid could not finish this reply. Try a shorter message or a new conversation.'
         finally:
             admin.record(self.visitor, text, self.snapshot()['messages'], self.error)
+            if self.data_store:
+                try:
+                    with admin.lock:
+                        self.data_store.save_activity(list(admin.activity))
+                    self.data_store.sync(self.data_identity)
+                except Exception:
+                    self.event('[Storage] Private backup sync failed; the local copy remains on this PC.')
             self.gate.release()
 
 
 class Sessions:
-    def __init__(self, factory=None):
+    def __init__(self, factory=None, data_store=None):
         self.items = {}
+        self.visitors = {}
         self.lock = threading.RLock()
         self.gate = threading.Lock()
         self.created = deque()
         self.factory = factory
+        self.data_store = data_store
 
-    def create(self):
+    def create(self, visitor_id=None):
         with self.lock:
             now = time.monotonic()
-            for key, item in list(self.items.items()):
+            unique_items = {id(item): item for item in self.items.values()}
+            for item in unique_items.values():
                 if not item['workspace'].busy and now - item['seen'] > 3600:
+                    for session_key, active in list(self.items.items()):
+                        if active is item:
+                            del self.items[session_key]
+                    self.visitors.pop(item['identity'], None)
                     item['workspace'].app.backend.client.close()
-                    item['directory'].cleanup()
-                    del self.items[key]
+                    cleanup = getattr(item['directory'], 'cleanup', None)
+                    if cleanup:
+                        cleanup()
             while self.created and now - self.created[0] > 60:
                 self.created.popleft()
             if len(self.items) >= 12 or len(self.created) >= 12:
                 raise RuntimeError('Lucid is at capacity. Please try again later.')
-            directory = tempfile.TemporaryDirectory(prefix='lucid-public-')
+            visitor_id = visitor_id if isinstance(visitor_id, str) else secrets.token_hex(32)
+            if self.data_store:
+                directory, identity = self.data_store.directory_for(visitor_id)
+                existing = self.visitors.get(identity)
+                if existing and now - existing['seen'] <= 3600:
+                    existing['seen'] = now
+                    token = secrets.token_urlsafe(32)
+                    self.items[token] = existing
+                    self.created.append(now)
+                    return token
+            else:
+                directory = tempfile.TemporaryDirectory(prefix='lucid-public-')
+                identity = secrets.token_hex(32)
             stop = threading.Event()
             backend = self.factory(stop) if self.factory else BrowserBackend(stop)
-            app = DeveloperChat(Path(directory.name), backend, lambda *_: None)
-            app.store.set_setting('auto_web', False)
-            app.store.set_setting('auto_memory', False)
+            workspace_root = Path(directory.name) if hasattr(directory, 'name') else Path(directory)
+            app = DeveloperChat(workspace_root, backend, lambda *_: None)
+            if not (workspace_root / 'personal' / 'settings.json').exists():
+                app.store.set_setting('auto_web', False)
+                app.store.set_setting('auto_memory', False)
+            try:
+                app.identifier, app.history = app.store.load('latest')
+            except (ValueError, OSError):
+                pass
             app.system += ' This public session has no web access. Do not claim you can browse.'
-            workspace = PublicWorkspace(app=app)
+            workspace = PublicWorkspace(app=app, data_store=self.data_store, data_identity=identity)
             workspace.stop = stop
             workspace.gate = self.gate
-            workspace.visitor = secrets.token_hex(8)
+            workspace.visitor = identity[:12]
+            workspace.messages = [dict(message, pending=False) for message in app.history]
             token = secrets.token_urlsafe(32)
-            self.items[token] = {'workspace': workspace, 'directory': directory,
-                                 'seen': now, 'requests': deque(), 'count': 0}
+            item = {'workspace': workspace, 'directory': directory, 'identity': identity,
+                    'seen': now, 'requests': deque(), 'count': 0}
+            self.items[token] = item
+            if self.data_store:
+                self.visitors[identity] = item
             self.created.append(now)
             return token
 
@@ -177,7 +220,7 @@ def make_handler(sessions):
                 if self.path == '/api/admin/action':
                     return self.send(200, admin.action(body.get('token'), body.get('action')))
                 if self.path == '/api/session':
-                    return self.send(201, {'session': sessions.create()})
+                    return self.send(201, {'session': sessions.create(body.get('visitor_id'))})
                 item = sessions.get(self.headers.get('X-Lucid-Session', ''))
                 if not item:
                     return self.send(401, {'error': 'Session expired. Reload the page to reconnect.'})
@@ -206,4 +249,7 @@ def make_handler(sessions):
 
 if __name__ == '__main__':
     print('Lucid V5 public gateway on 127.0.0.1:8767', flush=True)
-    ThreadingHTTPServer(('127.0.0.1', PORT), make_handler(Sessions())).serve_forever()
+    visitor_data = VisitorDataStore()
+    with admin.lock:
+        admin.activity = deque(visitor_data.load_activity(), maxlen=2000)
+    ThreadingHTTPServer(('127.0.0.1', PORT), make_handler(Sessions(data_store=visitor_data))).serve_forever()

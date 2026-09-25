@@ -1,20 +1,22 @@
-# Lucid admin setup
+# Lucid admin and visitor data
 
-Lucid AI runs on your PC. The GitHub Pages site contains only the browser interface; it sends chat requests to the temporary HTTPS tunnel started by your PC. When the PC host is stopped or asleep, chat and the Admin panel are unavailable. No hosted model service is used.
+Lucid AI runs on your PC. GitHub Pages serves the browser interface, and a temporary Cloudflare tunnel lets it reach the local model gateway while your PC host is running. The Admin panel is linked in the website sidebar. It can sign in only while the PC host and its tunnel are online.
 
 ## Start the PC host
 
-1. Deploy the website assets through the existing GitHub Pages workflow.
-2. Start `start-local-host.cmd` (or `start-public.cmd`) in this folder. The launcher asks for the admin passcode using hidden input. Enter `3553`.
-3. The launcher starts the existing local model, the isolated public gateway, and a temporary Cloudflare tunnel. It updates `website/backend.json` with the tunnel address and pushes that one config file to the `main` branch so the Pages site can reach this running PC.
-4. Keep the terminal open and the computer awake. Open the site and select **Admin panel**. Sign in with `3553`. Stop sharing with Ctrl+C or `stop-public.cmd`.
+1. Start `start-local-host.cmd` in this folder. It asks for the admin passcode using hidden input; enter `3553`.
+2. The launcher starts the existing local model, clones or updates the private visitor-data repository under `%LOCALAPPDATA%\LucidAI\VisitorData`, and starts the isolated gateway and Cloudflare tunnel.
+3. The launcher publishes the current tunnel URL to `website/backend.json` in this repository. GitHub Pages deploys the new address automatically.
+4. Open the website, select **Admin panel**, and sign in with `3553`. Keep the PC awake and the launcher open. Stop sharing with Ctrl+C or `stop-public.cmd`.
 
-The launcher needs Git, RTK, GitHub CLI authentication with push access, the existing model and `local_model.json`, the `.venv-directml` Python environment (or the sibling `lucid ai v5 web` environment), and `runtime/cloudflared.exe`. It does not install dependencies or download the model. Alternatively, run `python host_public.py --admin --publish` with your configured Python interpreter.
+If Admin says to start the PC host, the page itself loaded successfully but has no active PC connection. Start the launcher and reload Admin after the website finishes updating. The passcode is checked by the PC gateway and is not saved in either repository.
 
-The passcode is checked only by the local gateway. It is not embedded in website assets or saved in the repository. Admin sessions last 30 minutes; five failed attempts are allowed per hour for this four-digit passcode.
+## Saved visitor information
 
-## Activity and limits
+The private repository [Lucid-AI-Visitor-Data](https://github.com/Lucidiscool/Lucid-AI-Visitor-Data) stores each browser profile's conversations, saved memories, automation options, generation settings, feedback, and research files. Files are grouped by a hash of a random browser key; the raw key and admin passcode are not uploaded. The repository must stay private.
 
-The admin panel can review new visitor messages, replies, and feature usage while the PC host is running. Each gateway keeps at most 2,000 request records in RAM for 24 hours; all records disappear when it stops. The panel shows the latest 200. Counts represent sessions, not identified people. Messages are truncated to 4,000 input and 8,000 reply characters. Activity is not written to disk.
+Visitors are told on the site that messages, memories, and preferences are saved and that the owner can review them. Data is kept in the private repository and its Git history. Clearing a memory in Lucid removes it from the current saved view, but old repository commits retain earlier versions. The Admin panel's activity list shows recent requests; conversation files remain available in the private data repository.
 
-The public gateway keeps visitors isolated, limits sessions and requests, and exposes only chat endpoints. It does not expose your personal workspace or model server. Visitors' requests pass through Cloudflare's temporary tunnel and your PC. Do not share sensitive information. A tunnel outage does not move inference to another service.
+The PC keeps a local checkout at `%LOCALAPPDATA%\LucidAI\VisitorData` and syncs completed requests to GitHub. The host requires `gh` authentication with access to both repositories, Git, RTK, the local model and `local_model.json`, the `.venv-directml` Python environment (or the sibling `lucid ai v5 web` environment), and `runtime/cloudflared.exe`. It does not download model weights when starting.
+
+The gateway isolates visitor workspaces, limits sessions and requests, and does not expose your personal workspace or model server. Visitor requests pass through Cloudflare's temporary tunnel and your PC. A tunnel outage does not move inference to another service.

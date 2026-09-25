@@ -109,6 +109,14 @@ function render(){
   publicControls();
 }
 function sessionHeaders(){return hosted?{'X-Lucid-Session':publicSession}:{};}
+function persistentVisitorId(){
+  let id=localStorage.getItem('lucid-ai-public-visitor-id');
+  if(!/^[a-f0-9]{64}$/.test(id||'')){
+    id=Array.from(crypto.getRandomValues(new Uint8Array(32)),byte=>byte.toString(16).padStart(2,'0')).join('');
+    localStorage.setItem('lucid-ai-public-visitor-id',id);
+  }
+  return id;
+}
 async function poll(){
   if(polling || (hosted&&!publicSession))return;
   polling=true;
@@ -168,28 +176,29 @@ function publicControls(){
 async function connectPublic(){
   const banner=el('div','hosting-banner');
   const status=el('strong','','Connecting to Lucid AI V5…');status.id='connection-status';
-  banner.append(status,el('span','','Runs on the owner’s computer. Chats pass through Cloudflare and are stored temporarily on the host, separately from other visitors. Sessions expire after 1 hour idle.'));
+  banner.append(status,el('span','','Runs on the owner’s computer. Chats, saved memories, and preferences are kept in the owner’s private GitHub repository and its history; the owner can review them. Requests pass through Cloudflare.'));
   document.querySelector('.topbar').after(banner);
   document.querySelector('.model-tag').textContent='Lucid V5 · Qwen 3 · 4B';
   document.querySelector('.local-card p').textContent='Powered by the owner’s Lucid V5.';
   document.querySelector('.welcome > p').textContent='Ask a question. Explore an idea. Chat with Lucid AI V5.';
   document.querySelector('.composer-footer > span').textContent='Lucid V5 · Running on the owner’s PC';
-  document.querySelector('#memory-dialog .dialog-intro').textContent='Memories belong only to this temporary visitor session.';
+  document.querySelector('#memory-dialog .dialog-intro').textContent='Your saved memories are kept with your conversations so they are available on your next visit.';
   document.querySelector('[data-prompt^="/research"]').dataset.prompt='What changes when an AI runs locally on my computer?';
   const unavailable=new Set(['/search','/research','/auto-web','/model','/system']);
   for(let i=commands.length-1;i>=0;i--)if(unavailable.has(commands[i][0].trim().split(' ')[0]))commands.splice(i,1);
   showCommands();publicControls();
   try{
-    let config=await fetch('./backend.json',{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(!r.ok)throw Error('Backend not configured.');return r.json();});
+    let config=await fetch('./backend.json?ts='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(10000)}).then(r=>{if(!r.ok)throw Error('PC host address is not available yet. Start start-local-host.cmd on the owner PC.');return r.json();});
     if(config.provider!=='local')throw Error('Lucid is configured to run on your PC only.');
     const url=new URL(config.url);
     if(url.protocol!=='https:'||!url.hostname.endsWith('.trycloudflare.com')||url.username||url.password)throw Error('Invalid backend address.');
     apiBase=url.origin;
     banner.querySelector('span').textContent='Runs on the owner’s PC through Cloudflare. The owner can review messages, replies, and feature usage for up to 24 hours (at most 2,000 requests). Do not share sensitive information.';
+    const visitorId=persistentVisitorId();
     try{publicSession=sessionStorage.getItem('lucid-session:'+apiBase)||'';}catch{}
     if(publicSession){const check=await fetch(apiBase+'/api/state',{headers:sessionHeaders(),signal:AbortSignal.timeout(12000)});if(!check.ok)publicSession='';}
     if(!publicSession){
-      const response=await fetch(apiBase+'/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(15000)});
+      const response=await fetch(apiBase+'/api/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor_id:visitorId}),signal:AbortSignal.timeout(15000)});
       const body=await response.json();if(!response.ok)throw Error(body.error||'Could not connect.');
       publicSession=body.session;try{sessionStorage.setItem('lucid-session:'+apiBase,publicSession);}catch{}
     }

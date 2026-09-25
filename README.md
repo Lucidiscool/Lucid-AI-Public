@@ -2,15 +2,15 @@
 
 [Open the website](https://lucidiscool.github.io/Lucid-AI-Public/)
 
-Lucid V5 is a local AI workspace with streaming conversations, memory controls, web research, Markdown rendering, and developer tools. The public site uses your PC for inference while you choose to run the PC host. It does not use a hosted AI service.
+Lucid V5 is a local AI workspace with streaming conversations, memory controls, web research, Markdown rendering, and developer tools. The public site uses your PC for inference while you choose to run the PC host. It does not use a hosted AI service. Visitor chats, memories, and preferences persist in the separate private [Lucid-AI-Visitor-Data](https://github.com/Lucidiscool/Lucid-AI-Visitor-Data) repository.
 
 ## Public website: run Lucid on your PC
 
 The GitHub Pages site serves the browser interface. Start `start-local-host.cmd` on your computer to run the model, an isolated gateway, and a temporary Cloudflare tunnel. The launcher updates the Pages backend address for that tunnel. Keep your PC awake and the launcher open while people use Lucid; stop it when you are done. Chat and admin access are unavailable while your PC host is off.
 
-The launcher prompts privately for your admin passcode. Enter `3553`. Open the website's **Admin panel** and enter the same code to review temporary visitor activity. Setup details and limits are in [ADMIN.md](ADMIN.md).
+The launcher prompts privately for your admin passcode. Enter `3553`. Open the website's **Admin panel** and enter the same code to review recent visitor activity. Setup details and saved-data behavior are in [ADMIN.md](ADMIN.md).
 
-`start-public.cmd` is an equivalent launcher. Both update and push only `website/backend.json` with the current temporary tunnel address. This requires Git, RTK, GitHub CLI authentication with push access, and an available Git remote. The local public gateway isolates visitor sessions and never exposes your personal workspace or the model server directly.
+`start-public.cmd` is an equivalent launcher. Both update and push only `website/backend.json` with the current temporary tunnel address. This requires Git, RTK, GitHub CLI authentication with push access to this code repository and the private data repository, and an available Git remote. The local public gateway isolates visitor workspaces and never exposes your personal workspace or the model server directly.
 
 ## Run the full app locally (Windows)
 

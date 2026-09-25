@@ -217,5 +217,35 @@ async function connectPublic(){
     $('error-box').hidden=false;$('error-box').textContent='The host computer or connection is unavailable. Reconnecting automatically. '+error.message;
   }finally{connecting=false;}
 }
+async function watchPublishedWebsite(){
+  let publishedVersion='';
+  async function check(){
+    try{
+      const checkId=Date.now()+'-'+Math.random().toString(16).slice(2);
+      const pageUrl=new URL('./',location.href);pageUrl.searchParams.set('__lucid_check',checkId);
+      const response=await fetch(pageUrl,{cache:'no-store',signal:AbortSignal.timeout(12000)});
+      if(!response.ok)return;
+      const html=await response.text();
+      const documentPage=new DOMParser().parseFromString(html,'text/html');
+      const links=Array.from(documentPage.querySelectorAll('script[src],link[rel="stylesheet"],link[rel~="icon"]'))
+        .map(node=>node.src||node.href).filter(Boolean).map(value=>new URL(value,pageUrl))
+        .filter(asset=>asset.origin===location.origin);
+      const assets=await Promise.all(links.map(async asset=>{
+        asset.searchParams.set('__lucid_check',checkId);
+        const result=await fetch(asset,{cache:'no-store',signal:AbortSignal.timeout(12000)});
+        if(!result.ok)throw Error('Could not check a published website file.');
+        return new Uint8Array(await result.arrayBuffer());
+      }));
+      const chunks=[new TextEncoder().encode(html),...assets];
+      const bytes=new Uint8Array(chunks.reduce((size,part)=>size+part.length,0));
+      let offset=0;for(const part of chunks){bytes.set(part,offset);offset+=part.length;}
+      const digest=await crypto.subtle.digest('SHA-256',bytes);
+      const version=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+      if(!publishedVersion)publishedVersion=version;
+      else if(version!==publishedVersion)location.reload();
+    }catch{}
+  }
+  await check();setInterval(check,60000);
+}
 showCommands();
-if(hosted){connectPublic();setInterval(()=>{if(connecting)return;if(!connected&&Date.now()-lastConnectAttempt>30000)connectPublic();else poll();},1500);}else{poll();setInterval(poll,600);}
+if(hosted){connectPublic();watchPublishedWebsite();setInterval(()=>{if(connecting)return;if(!connected&&Date.now()-lastConnectAttempt>30000)connectPublic();else poll();},1500);}else{poll();setInterval(poll,600);}

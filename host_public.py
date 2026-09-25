@@ -1,5 +1,6 @@
 """Run Lucid V5 behind a free temporary tunnel; optionally publish its address."""
 import argparse
+from contextlib import contextmanager
 import getpass
 import os
 import json
@@ -15,6 +16,20 @@ from local_chat import Backend
 
 ROOT = Path(__file__).resolve().parent
 FLAGS = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
+
+@contextmanager
+def repository_update_lock(path):
+    path.parent.mkdir(exist_ok=True)
+    with path.open('a') as lock:
+        if sys.platform.startswith('linux'):
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if sys.platform.startswith('linux'):
+                fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def main():
@@ -94,16 +109,17 @@ def main():
             else:
                 raise RuntimeError('Tunnel did not become reachable.')
             if args.publish:
-                (ROOT / 'website/backend.json').write_text(json.dumps({'provider': 'local', 'url': url}, indent=2)+'\n', encoding='utf-8')
-                commands = []
-                changed = subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'website/backend.json'], cwd=ROOT)
-                if changed.returncode == 1:
-                    commands = [['git','add','website/backend.json'],
-                                ['git','commit','--only','website/backend.json','-m','Connect website to running Lucid V5 host']]
-                elif changed.returncode != 0:
-                    raise RuntimeError('Could not inspect website backend configuration.')
-                for command in commands + [['git','push','origin','main']]:
-                    subprocess.run(command, cwd=ROOT, check=True)
+                with repository_update_lock(runs / 'repo-update.lock'):
+                    (ROOT / 'website/backend.json').write_text(json.dumps({'provider': 'local', 'url': url}, indent=2)+'\n', encoding='utf-8')
+                    commands = []
+                    changed = subprocess.run(['git', 'diff', '--quiet', 'HEAD', '--', 'website/backend.json'], cwd=ROOT)
+                    if changed.returncode == 1:
+                        commands = [['git','add','website/backend.json'],
+                                    ['git','commit','--only','website/backend.json','-m','Connect website to running Lucid V5 host']]
+                    elif changed.returncode != 0:
+                        raise RuntimeError('Could not inspect website backend configuration.')
+                    for command in commands + [['git','push','origin','main']]:
+                        subprocess.run(command, cwd=ROOT, check=True)
             print('Lucid V5 is available through '+url, flush=True)
             print('The website is configured with this PC tunnel address.', flush=True)
             print('Keep this process and your PC running. Use stop-public.cmd to stop sharing.', flush=True)

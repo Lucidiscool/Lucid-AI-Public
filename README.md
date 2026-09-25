@@ -49,8 +49,16 @@ After configuring the model and signing into GitHub CLI, run:
 
 This enables `lucid.target` and separate user services for the model, public host, and localhost app.
 They start at boot (including before sign-in), restart after failures, and retry while networking
-is unavailable. Each public host restart creates a new Cloudflare URL and pushes `website/backend.json`;
-GitHub Pages then deploys that address. The website will be offline while the laptop is off or asleep.
+is unavailable. A background check looks for GitHub source updates every minute and reloads Lucid
+when AI server code changes. Changes to the local model configuration or replacement model file
+also trigger a reload after the file stops changing. GitHub Pages deploys website changes and open
+tabs reload the new version automatically. Each public host restart creates a new Cloudflare URL
+and pushes `website/backend.json`; GitHub Pages then deploys that address. The website will be
+offline while the laptop is off or disconnected.
+
+On this Fedora KDE laptop, automatic suspend is disabled on AC and battery, and closing the lid
+does not suspend it. Keep it plugged in for continuous hosting: a depleted battery or loss of power
+will still turn it off. The physical power button and normal shutdown controls remain available.
 
 The installer saves the admin passcode and GitHub token in owner-only files under
 `~/.config/lucid-host/credentials`; systemd supplies them to the host service at startup.
@@ -59,6 +67,7 @@ Rerun the installer after changing credentials or moving the project.
 
 ```bash
 systemctl --user status lucid-model lucid-host lucid-local
+systemctl --user status lucid-update.timer
 systemctl --user restart lucid.target
 systemctl --user stop lucid.target
 journalctl --user -u lucid-host -n 50

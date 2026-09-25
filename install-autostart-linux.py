@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent
+STATE = ROOT / 'runs/auto-update-state.json'
 
 
 def quoted(value):
@@ -51,6 +52,10 @@ def main():
         parser.error('Sign in with gh auth login first.')
     private_file(saved, password)
     private_file(credentials / 'github-token', token)
+    (ROOT / 'runs').mkdir(exist_ok=True)
+    if not STATE.exists():
+        subprocess.run([str(python), str(ROOT / 'auto_update_linux.py'), '--initialize'],
+                       cwd=ROOT, check=True)
     units = config / 'systemd/user'
     units.mkdir(parents=True, exist_ok=True)
     for mode in ('model', 'host', 'local'):
@@ -71,18 +76,33 @@ def main():
         '[Unit]\nDescription=Lucid laptop hosting\n'
         'Wants=lucid-model.service lucid-host.service lucid-local.service\n'
         '\n[Install]\nWantedBy=default.target\n')
+    (units / 'lucid-update.service').write_text(
+        '[Unit]\nDescription=Refresh Lucid from GitHub and reload changed models\n'
+        '\n[Service]\nType=oneshot\n'
+        f'WorkingDirectory={str(ROOT).replace(chr(37), chr(37) * 2)}\n'
+        f'Environment={quoted("PATH=" + environment["PATH"])}\n'
+        f'ExecStart={quoted(python)} {quoted(ROOT / "auto_update_linux.py")}\n'
+        'UMask=0077\n')
+    (units / 'lucid-update.timer').write_text(
+        '[Unit]\nDescription=Check for Lucid source and model updates\n\n'
+        '[Timer]\nOnBootSec=2min\nOnUnitActiveSec=1min\n'
+        'Persistent=true\nUnit=lucid-update.service\n\n'
+        '[Install]\nWantedBy=timers.target\n')
     subprocess.run(['systemd-analyze', '--user', 'verify',
                     *[str(units / f'lucid-{mode}.service') for mode in ('model', 'host', 'local')],
+                    str(units / 'lucid-update.service'), str(units / 'lucid-update.timer'),
                     str(units / 'lucid.target')], check=True)
     subprocess.run(['loginctl', 'enable-linger', getpass.getuser()], check=True)
     subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
     subprocess.run(['systemctl', '--user', 'enable', 'lucid.target'], check=True)
+    subprocess.run(['systemctl', '--user', 'enable', '--now', 'lucid-update.timer'], check=True)
     if not args.no_start:
-        subprocess.run(['systemctl', '--user', 'start', 'lucid.target'], check=True)
+        subprocess.run(['systemctl', '--user', 'restart', 'lucid.target'], check=True)
     print('Lucid autostart enabled at boot. Services retry if the network is unavailable.')
     print('Credentials are stored in owner-only files at ' + str(credentials))
     print('Stop: systemctl --user stop lucid.target')
     print('Restart: systemctl --user restart lucid.target')
+    print('Update check: systemctl --user status lucid-update.timer')
 
 
 if __name__ == '__main__':

@@ -66,6 +66,23 @@ journalctl --user -u lucid-host -n 50
 
 To turn off boot hosting, run `systemctl --user disable --now lucid.target`.
 
+### Raspberry Pi Linux host
+
+The source is prepared for Linux ARM64, but the current laptop's `local_model.json` and Vulkan
+binary are specific to this computer. Do not copy those paths or runtime files to a Pi. A Raspberry
+Pi 5 with 8 GB or 16 GB RAM is the sensible starting point for this 2.5 GB quantized model; expect
+slower responses than on the laptop and benchmark before sharing it publicly. Use active cooling
+and a suitable 5 V / 5 A USB-C supply for sustained load. Raspberry Pi lists these RAM sizes,
+VideoCore VII Vulkan support, cooling guidance, and power requirements on its [Pi 5 specifications](https://www.raspberrypi.com/products/raspberry-pi-5/).
+
+On a 64-bit Raspberry Pi OS installation, build or install a Linux AArch64 `llama-server` on the Pi
+itself, then configure `local_model.json` with the Pi's absolute paths. Start with the CPU backend
+(`device` set to `none`, `gpu_layers` set to `0`) and a modest context/cache; test the Pi's Vulkan
+backend separately only if its driver and `llama.cpp` build list it as a device. The upstream
+[`llama.cpp` build guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md) documents
+Linux AArch64 CPU builds and optional Vulkan builds. The existing Linux systemd installer can then
+enable the same boot services. Pi model speed and Vulkan offload are not verified by this project yet.
+
 ## Included source
 
 - `website/`: interface, styles, and assets

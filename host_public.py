@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import shutil
 from pathlib import Path
 import httpx
 from local_chat import Backend
@@ -25,8 +26,13 @@ def main():
         if not 4 <= len(password) <= 512:
             parser.error('The admin passcode must contain 4–512 characters.')
         os.environ['LUCID_ADMIN_PASSCODE'] = password
-    if not (ROOT / 'runtime/cloudflared.exe').is_file():
-        raise RuntimeError('Missing runtime/cloudflared.exe. Install Cloudflare Tunnel from its official distribution before starting.')
+    tunnel_binary = shutil.which('cloudflared')
+    if not tunnel_binary:
+        bundled_tunnel = ROOT / 'runtime' / ('cloudflared.exe' if os.name == 'nt' else 'cloudflared')
+        if bundled_tunnel.is_file():
+            tunnel_binary = str(bundled_tunnel)
+    if not tunnel_binary:
+        raise RuntimeError('cloudflared is missing. Install Cloudflare Tunnel and make sure it is on PATH.')
     config_path = ROOT / 'website/backend.json'
     runs = ROOT / 'runs'
     runs.mkdir(exist_ok=True)
@@ -56,7 +62,7 @@ def main():
                 time.sleep(1)
             else:
                 raise RuntimeError('Public gateway did not start.')
-            tunnel = subprocess.Popen([str(ROOT / 'runtime/cloudflared.exe'), 'tunnel', '--no-autoupdate', '--url', 'http://127.0.0.1:8767', '--http-host-header', '127.0.0.1:8767'], cwd=ROOT, stdout=tunnel_log, stderr=subprocess.STDOUT, creationflags=FLAGS)
+            tunnel = subprocess.Popen([tunnel_binary, 'tunnel', '--no-autoupdate', '--url', 'http://127.0.0.1:8767', '--http-host-header', '127.0.0.1:8767'], cwd=ROOT, stdout=tunnel_log, stderr=subprocess.STDOUT, creationflags=FLAGS)
             processes.append(tunnel)
             url = None
             for _ in range(90):
@@ -77,9 +83,9 @@ def main():
                 raise RuntimeError('Tunnel did not become reachable.')
             if args.publish:
                 (ROOT / 'website/backend.json').write_text(json.dumps({'provider': 'local', 'url': url}, indent=2)+'\n', encoding='utf-8')
-                for command in [ ['rtk','git','add','website/backend.json'],
-                                 ['rtk','git','commit','--only','website/backend.json','-m','Connect website to running Lucid V5 host'],
-                                 ['rtk','git','push','origin','main'] ]:
+                for command in [ ['git','add','website/backend.json'],
+                                 ['git','commit','--only','website/backend.json','-m','Connect website to running Lucid V5 host'],
+                                 ['git','push','origin','main'] ]:
                     subprocess.run(command, cwd=ROOT, check=True)
             print('Lucid V5 is available through '+url, flush=True)
             print('The website is configured with this PC tunnel address.', flush=True)

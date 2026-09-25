@@ -44,9 +44,9 @@ class Backend:
         c = self.config
         log = ROOT / 'runs/local-server.log'
         log.parent.mkdir(exist_ok=True)
-        print('Loading Qwen on the RX 6600. Server log:', log, flush=True)
+        print('Loading the local Qwen model. Server log:', log, flush=True)
         with log.open('ab') as output:
-            process = subprocess.Popen([c['server'], '-m', c['model'], '--device', 'Vulkan0',
+            process = subprocess.Popen([c['server'], '-m', c['model'], '--device', c.get('device', 'Vulkan0'),
                 '-ngl', str(c['gpu_layers']), '-c', str(c['context']), '-np', '1',
                 '--host', '127.0.0.1', '--port', str(c['port']), '--alias', c['alias'],
                 '--no-webui', '--cors-origins', f"http://127.0.0.1:{c['port']}", '-lv', '4'], cwd=ROOT, stdout=output, stderr=subprocess.STDOUT,

@@ -15,7 +15,12 @@ REPOSITORY = 'Lucidiscool/Lucid-AI-Visitor-Data'
 class VisitorDataStore:
     def __init__(self, root=None, repository=REPOSITORY):
         self.repository = repository
-        local = Path(os.environ.get('LOCALAPPDATA') or (Path.home() / 'AppData' / 'Local'))
+        if os.environ.get('LOCALAPPDATA'):
+            local = Path(os.environ['LOCALAPPDATA'])
+        elif os.name == 'nt':
+            local = Path.home() / 'AppData' / 'Local'
+        else:
+            local = Path(os.environ.get('XDG_DATA_HOME') or (Path.home() / '.local' / 'share'))
         self.root = Path(root or os.environ.get('LUCID_VISITOR_DATA_DIR') or local / 'LucidAI' / 'VisitorData')
         self.lock = threading.RLock()
         self.ensure_repository()

@@ -66,8 +66,9 @@ function renderMessages(messages){
   const fragment=document.createDocumentFragment();
   messages.forEach((message,index)=>{
     const article=el('article','message '+message.role+(message.pending?' pending':''));
-    article.append(el('div','message-avatar',message.role==='user'?'You':state.experiment?'◈':'✦'));
-    const body=el('div','message-body'), label=el('div','message-label',message.role==='user'?'You':state.experiment?'Experiment':'Lucid');
+    const adminMessage=message.role==='admin';
+    article.append(el('div','message-avatar',adminMessage?'Admin':message.role==='user'?'You':state.experiment?'◈':'✦'));
+    const body=el('div','message-body'), label=el('div','message-label',adminMessage?'Lucid Admin':message.role==='user'?'You':state.experiment?'Experiment':'Lucid');
     if(message.role==='assistant')label.append(el('small','',state.experiment?'Temporary facts':'V5'));
     body.append(label,markdown(message.content));
     if(message.interrupted)body.append(el('p','interrupted','Stopped · this partial answer was not saved'));

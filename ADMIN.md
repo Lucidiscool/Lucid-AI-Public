@@ -28,7 +28,7 @@ The model setup helper currently in the public project installs the pinned Windo
 
 The private repository [Lucid-AI-Visitor-Data](https://github.com/Lucidiscool/Lucid-AI-Visitor-Data) stores visitor conversations, saved memories, settings, feedback, and research. Each browser profile is identified by a hash of a random browser key; the raw key and admin passcode are not uploaded. Local checkout defaults to `%LOCALAPPDATA%\LucidAI\VisitorData` on Windows and `~/.local/share/LucidAI/VisitorData` on Linux.
 
-The Admin activity panel shows recent requests synced from the private data store. Full saved conversations, memories, and options remain in that private repository. Repository history retains earlier versions after data is changed or removed from the current saved view.
+The Admin activity panel shows recent requests synced from the private data store. Open an activity row to read that visitor's saved conversation and send a reply. Admin replies are stored separately from the AI transcript and appear to visitors under the **Lucid Admin** label; they are not passed off as AI responses. Full saved conversations, memories, and options remain in that private repository. Repository history retains earlier versions after data is changed or removed from the current saved view.
 
 ## Security and availability
 

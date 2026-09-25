@@ -45,18 +45,19 @@ class AdminService:
             return {'token': token, 'expires_in': 1800}
 
     def authorize(self, token):
-        if not isinstance(token, str) or self.tokens.get(token, 0) <= time.monotonic():
-            raise PermissionError('Admin session expired. Sign in again.')
+        with self.lock:
+            if not isinstance(token, str) or self.tokens.get(token, 0) <= time.monotonic():
+                raise PermissionError('Admin session expired. Sign in again.')
 
     def config(self):
         with self.lock:
             return copy.deepcopy(self.host)
 
-    def record(self, visitor, message, messages, error=''):
+    def record(self, visitor, message, messages, error='', visitor_id=None):
         # Bounded RAM only. Never retain session credentials or owner workspace data.
         with self.lock:
             answer = messages[-1].get('content', '') if messages and messages[-1].get('role') == 'assistant' else ''
-            self.activity.append({'visitor': visitor, 'time': time.time(),
+            self.activity.append({'visitor': visitor, 'visitor_id': visitor_id, 'time': time.time(),
                 'feature': message.split()[0] if message.startswith('/') else 'chat',
                 'message': message[:4000], 'answer': answer[:8000], 'failed': bool(error)})
             self.prune()

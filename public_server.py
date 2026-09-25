@@ -40,7 +40,7 @@ class PublicWorkspace(Workspace):
                 if self.error and self.error != 'Stopped by you.':
                     self.error = 'Lucid could not finish this reply. Try a shorter message or a new conversation.'
         finally:
-            admin.record(self.visitor, text, self.snapshot()['messages'], self.error)
+            admin.record(self.visitor, text, self.snapshot()['messages'], self.error, self.data_identity)
             if self.data_store:
                 try:
                     with admin.lock:
@@ -108,7 +108,8 @@ class Sessions:
             workspace.stop = stop
             workspace.gate = self.gate
             workspace.visitor = identity[:12]
-            workspace.messages = [dict(message, pending=False) for message in app.history]
+            workspace.admin_messages = app.store.read('admin-messages.json', [])
+            workspace.messages = self._display_messages(app.history, workspace.admin_messages)
             token = secrets.token_urlsafe(32)
             item = {'workspace': workspace, 'directory': directory, 'identity': identity,
                     'seen': now, 'requests': deque(), 'web_requests': deque(), 'count': 0}
@@ -117,6 +118,84 @@ class Sessions:
                 self.visitors[identity] = item
             self.created.append(now)
             return token
+
+    def open_visitor(self, identity):
+        """Return the current visitor workspace, or reopen its saved workspace."""
+        if not isinstance(identity, str) or len(identity) not in (12, 64) or any(c not in '0123456789abcdef' for c in identity):
+            raise ValueError('Invalid visitor session.')
+        with self.lock:
+            if len(identity) == 12:
+                active = [key for key in self.visitors if key.startswith(identity)]
+                if len(active) == 1:
+                    identity = active[0]
+                elif self.data_store:
+                    matches = [path.name for path in (self.data_store.root / 'visitors').glob(f'*/{identity}*')
+                               if path.is_dir() and len(path.name) == 64]
+                    if len(matches) != 1:
+                        raise ValueError('Could not uniquely identify this visitor session. Refresh the admin page.')
+                    identity = matches[0]
+                else:
+                    raise ValueError('Could not find this visitor session.')
+            item = self.visitors.get(identity)
+            if item:
+                return item
+            if not self.data_store:
+                raise ValueError('Visitor conversations are not persisted on this host.')
+            digest = identity
+            directory = self.data_store.root / 'visitors' / digest[:2] / digest
+            if not directory.is_dir():
+                raise ValueError('Invalid visitor session.')
+            stop = threading.Event()
+            backend = self.factory(stop) if self.factory else BrowserBackend(stop)
+            app = DeveloperChat(Path(directory), backend, lambda *_: None)
+            try:
+                app.identifier, app.history = app.store.load('latest')
+            except (ValueError, OSError):
+                raise ValueError('No saved conversation exists for this visitor.')
+            app.system += ' Search and research run on the host when explicitly requested. Only claim web research when retrieved sources are supplied.'
+            workspace = PublicWorkspace(app=app, data_store=self.data_store, data_identity=digest)
+            workspace.stop = stop
+            workspace.gate = self.gate
+            workspace.visitor = digest[:12]
+            workspace.admin_messages = app.store.read('admin-messages.json', [])
+            workspace.messages = self._display_messages(app.history, workspace.admin_messages)
+            item = {'workspace': workspace, 'directory': directory, 'identity': digest,
+                    'seen': time.monotonic(), 'requests': deque(), 'web_requests': deque(), 'count': 0}
+            self.visitors[digest] = item
+            return item
+
+    def admin_reply(self, identity, message):
+        if not isinstance(message, str) or not 1 <= len(message.strip()) <= 4000:
+            raise ValueError('Enter a reply of 1–4000 characters.')
+        item = self.open_visitor(identity)
+        workspace = item['workspace']
+        with workspace.lock:
+            if workspace.busy:
+                raise RuntimeError('Wait until Lucid finishes its current reply, then try again.')
+            entry = {'role': 'admin', 'content': message.strip(), 'pending': False,
+                     'after_history': len(workspace.app.history), 'time': time.time()}
+            workspace.messages.append(entry)
+            workspace.admin_messages = getattr(workspace, 'admin_messages', []) + [entry]
+            workspace.app.store.write('admin-messages.json', workspace.admin_messages)
+            item['seen'] = time.monotonic()
+        with admin.lock:
+            admin.activity.append({'visitor': identity[:12], 'visitor_id': identity, 'time': time.time(),
+                'feature': 'admin reply', 'message': message.strip()[:4000], 'answer': '', 'failed': False})
+            admin.prune()
+            if self.data_store:
+                self.data_store.save_activity(list(admin.activity))
+        if self.data_store:
+            self.data_store.sync(identity)
+        return {'ok': True}
+
+    @staticmethod
+    def _display_messages(history, admin_messages):
+        result = []
+        for index in range(len(history) + 1):
+            result.extend(dict(m, pending=False) for m in admin_messages if m.get('after_history') == index)
+            if index < len(history):
+                result.append(dict(history[index], pending=False))
+        return result
 
     def get(self, token):
         with self.lock:
@@ -230,7 +309,19 @@ def make_handler(sessions):
                 if self.path == '/api/admin/login':
                     return self.send(200, admin.login(body.get('password')))
                 if self.path == '/api/admin/action':
-                    return self.send(200, admin.action(body.get('token'), body.get('action')))
+                    action = body.get('action')
+                    if action in ('conversation', 'reply'):
+                        admin.authorize(body.get('token'))
+                        if action == 'conversation':
+                            item = sessions.open_visitor(body.get('visitor_id'))
+                            workspace = item['workspace']
+                            with workspace.lock:
+                                stored = workspace.app.store.read('admin-messages.json', [])
+                                workspace.admin_messages = stored
+                                messages = sessions._display_messages(workspace.app.history, stored)
+                            return self.send(200, {'visitor_id': item['identity'], 'messages': messages})
+                        return self.send(200, sessions.admin_reply(body.get('visitor_id'), body.get('message')))
+                    return self.send(200, admin.action(body.get('token'), action))
                 if self.path == '/api/session':
                     return self.send(201, {'session': sessions.create(body.get('visitor_id'))})
                 item = sessions.get(self.headers.get('X-Lucid-Session', ''))

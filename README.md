@@ -8,7 +8,7 @@ Lucid V5 is a local AI workspace with streaming conversations, memory controls, 
 
 The GitHub Pages site serves the browser interface. Start `start-local-host.cmd` on Windows or `./start-local-host.sh` on Linux to run the model, an isolated gateway, and a temporary Cloudflare tunnel. The launcher updates the Pages backend address for that tunnel. Keep the host computer awake and the launcher open while people use Lucid; stop it when you are done. Chat and admin access are unavailable while the host is off.
 
-The launcher prompts privately for your admin passcode. Enter `3553`. Open the website's **Admin panel** and enter the same code to review recent visitor activity. Setup details and saved-data behavior are in [ADMIN.md](ADMIN.md); private Windows and Linux installer scripts are in [Lucid-AI-Admin-Host](https://github.com/Lucidiscool/Lucid-AI-Admin-Host).
+The launcher prompts privately for your admin passcode. Open the website's **Admin panel** and enter the same code to review recent visitor activity. Setup details and saved-data behavior are in [ADMIN.md](ADMIN.md); private Windows and Linux installer scripts are in [Lucid-AI-Admin-Host](https://github.com/Lucidiscool/Lucid-AI-Admin-Host).
 
 `start-public.cmd` is an equivalent Windows launcher. Both Windows and Linux launchers update and push only `website/backend.json` with the current temporary tunnel address. This requires Git and GitHub CLI authentication with push access to this code repository and the private data repository. The local public gateway isolates visitor workspaces and never exposes your personal workspace or the model server directly.
 

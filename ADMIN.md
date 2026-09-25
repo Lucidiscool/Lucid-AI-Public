@@ -12,14 +12,14 @@ The host computer needs Git, GitHub CLI signed into an account with push access 
 
 1. Run `install-windows.ps1` from the private installer repository. It creates `C:\Users\<you>\Lucid-AI-Public` by default. Python 3.11+, Git, GitHub CLI, and Cloudflare Tunnel are required; the installer can install Cloudflare Tunnel with `winget`.
 2. Set up your Windows model and ensure `local_model.json` points to its GGUF and `llama-server.exe`. Keep your model configuration and weights out of Git.
-3. Start `start-local-host.cmd` in the public project folder. Enter the admin passcode using the hidden prompt; the configured passcode is `3553`.
+3. Start `start-local-host.cmd` in the public project folder. Enter the admin passcode using the hidden prompt.
 4. Keep the window open while people use Lucid. Visit the website and select **Admin panel**. To stop hosting, run `stop-public.cmd` or press Ctrl+C.
 
 ## Linux
 
 1. Run `install-linux.sh` from the private installer repository. On Debian or Ubuntu it can install Python, Git, GitHub CLI, and Cloudflare Tunnel packages when `sudo` is available. Other distributions need those tools installed first.
 2. Install a Linux-compatible `llama.cpp` build for your GPU and the Lucid GGUF model. Create `local_model.json` in `~/Lucid-AI-Public`; set `server` to your Linux `llama-server`, `model` to the local GGUF, `device` to a backend available in your build (commonly `Vulkan0`), and `port`, `alias`, `context`, and `gpu_layers` to your model settings. Windows `.exe` files and Windows paths do not work on Linux.
-3. Run `./start-local-host.sh` in the public project folder. Enter the admin passcode using the hidden prompt; the configured passcode is `3553`.
+3. Run `./start-local-host.sh` in the public project folder. Enter the admin passcode using the hidden prompt.
 4. Keep the terminal open while hosting. Visit the website and select **Admin panel**. Press Ctrl+C to stop.
 
 The model setup helper currently in the public project installs the pinned Windows Vulkan runtime. For Linux, install/build the Linux runtime and model separately; a compatible Linux build is required before starting the host.

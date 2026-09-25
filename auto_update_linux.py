@@ -131,8 +131,14 @@ def main():
         restart = observe_model(state, model_signature())
         restart = observe_working_changes(state, local_source_signature()) or restart
         old_head = run('git', 'rev-parse', 'HEAD').stdout.strip()
-        if state.get('applied_source') not in (None, old_head):
-            restart = True
+        applied_head = state.get('applied_source')
+        if applied_head not in (None, old_head):
+            ancestry = subprocess.run(['git', 'merge-base', '--is-ancestor', applied_head, old_head], cwd=ROOT)
+            if ancestry.returncode != 0:
+                restart = True
+            else:
+                already_applied = run('git', 'diff', '--name-only', applied_head, old_head).stdout.splitlines()
+                restart = needs_service_restart(already_applied) or restart
         STATE.write_text(json.dumps(state, indent=2) + '\n')
         try:
             run('git', 'fetch', '--quiet', 'origin', 'main')

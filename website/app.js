@@ -5,6 +5,7 @@ let connecting=false, lastConnectAttempt=0;
 const hosted=!!window.LUCID_STATIC_PREVIEW;
 let state = null, mode = 'chat', lastMessages = '', lastChats = '', lastMemories = '', lastEvents = '', lastNotice = '', polling = false;
 const commands = [
+ ['/theme ','Change appearance, for example /theme dark purple'],
  ['/help','See every command'],['/think','Toggle readable process summaries'],['/forget','Toggle the blank canvas experiment'],
  ['/facts','See experimental facts'],['/teach ','Teach an experimental fact'],['/reset','Clear experimental facts'],
  ['/search ','Search the web for a topic'],['/research ','Explore multiple sources'],['/auto-memory off','Disable automatic memory'],
@@ -142,7 +143,9 @@ async function request(path,data){
 }
 async function sendCommand(message){if(state?.busy){toast('Let the current reply finish, or stop it first.');return false;}if(await request('/api/message',{message})){state.busy=true;state.error='';render();await poll();return true;}return false;}
 async function waitIdle(){for(let i=0;i<240;i++){await new Promise(r=>setTimeout(r,250));await poll();if(!state.busy)return;}throw Error('The command is taking longer than expected.');}
-async function sendMessage(event){event?.preventDefault();const text=$('prompt').value.trim();if(!text||state?.busy)return;
+async function sendMessage(event){event?.preventDefault();const text=$('prompt').value.trim();if(!text)return;
+  if(/^\/theme(?:\s|$)/i.test(text)){document.dispatchEvent(new CustomEvent('lucid-theme',{detail:text.slice(6).trim()}));$('prompt').value='';$('prompt').style.height='auto';return;}
+  if(state?.busy)return;
   if(text==='/help'){openDialog('commands-dialog');$('prompt').value='';return;}
   const message=text.startsWith('/')||mode==='chat'?text:'/'+mode+' '+text;
   if(await sendCommand(message)){$('prompt').value='';$('prompt').style.height='auto';$('prompt').focus();render();}}

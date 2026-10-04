@@ -1,5 +1,6 @@
 """Bounded public gateway for Lucid V5; never serves the owner's workspace."""
 import json
+import re
 import secrets
 import tempfile
 import threading
@@ -7,6 +8,7 @@ import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import httpx
 
 from dev_chat import DeveloperChat
 from admin_service import admin
@@ -19,6 +21,28 @@ ALLOWED = {'/new', '/think', '/forget', '/facts', '/teach', '/reset', '/remember
            '/memories', '/good', '/bad', '/correct', '/feedback', '/unrate', '/chats',
            '/load', '/history', '/save', '/temperature', '/tokens', '/settings', '/stats',
            '/auto-memory', '/search', '/research'}
+EVOLUTION_ROUTES = (
+    ('GET', re.compile(r'/api/(?:games|sessions|checkpoints)')),
+    ('GET', re.compile(r'/api/sessions/[0-9a-f]{12}(?:/explanation|/replay)?')),
+    ('GET', re.compile(r'/api/jobs/[0-9a-f]{12}')),
+    ('POST', re.compile(r'/api/(?:sessions|compare|play)')),
+    ('POST', re.compile(r'/api/sessions/[0-9a-f]{12}/control')),
+    ('POST', re.compile(r'/api/play/[0-9a-f]{12}/step')),
+)
+
+
+def evolution_path(path, method):
+    if not path.startswith('/api/evolution/'):
+        return None
+    local_path = '/api/' + path[len('/api/evolution/'):]
+    return local_path if any(verb == method and pattern.fullmatch(local_path)
+                             for verb, pattern in EVOLUTION_ROUTES) else None
+
+
+def fetch_evolution(method, path, body):
+    with httpx.Client(trust_env=False, timeout=15) as client:
+        return client.request(method, 'http://127.0.0.1:8770' + path,
+                              json=body if method == 'POST' else None)
 
 
 class PublicWorkspace(Workspace):
@@ -269,7 +293,7 @@ def make_handler(sessions):
             if self.headers.get('Origin') == ORIGIN:
                 self.send_header('Access-Control-Allow-Origin', ORIGIN)
                 self.send_header('Vary', 'Origin')
-            self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Lucid-Session, X-Lucid-Token')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Lucid-Session, X-Lucid-Token, X-Lucid-Admin')
             self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Content-Length', str(len(raw)))
@@ -284,11 +308,28 @@ def make_handler(sessions):
         def do_OPTIONS(self):
             self.send(200 if self.allowed() else 403, {})
 
+        def evolution(self, method, body=None):
+            path = evolution_path(self.path, method)
+            if not path:
+                return self.send(404, {'error': 'Not found.'})
+            try:
+                admin.authorize(self.headers.get('X-Lucid-Admin', ''))
+                response = fetch_evolution(method, path, body)
+                if len(response.content) > 8_000_000:
+                    return self.send(502, {'error': 'Evolution response is too large.'})
+                return self.send(response.status_code, response.json())
+            except PermissionError as error:
+                return self.send(401, {'error': str(error)})
+            except (httpx.HTTPError, ValueError):
+                return self.send(503, {'error': 'Evolution is unavailable on the host.'})
+
         def do_GET(self):
             if not self.allowed():
                 return self.send(403, {'error': 'Invalid origin or host.'})
             if self.path == '/api/health':
                 return self.send(200, {'app': 'lucid-v5-public'})
+            if self.path.startswith('/api/evolution/'):
+                return self.evolution('GET')
             item = sessions.get(self.headers.get('X-Lucid-Session', ''))
             if not item:
                 return self.send(401, {'error': 'Session expired. Reload the page to reconnect.'})
@@ -306,6 +347,8 @@ def make_handler(sessions):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError('Expected a JSON object.')
+                if self.path.startswith('/api/evolution/'):
+                    return self.evolution('POST', body)
                 if self.path == '/api/admin/login':
                     return self.send(200, admin.login(body.get('password')))
                 if self.path == '/api/admin/action':

@@ -8,7 +8,7 @@ from unittest.mock import patch
 from admin_service import AdminService
 from http.server import ThreadingHTTPServer
 import httpx
-from public_server import Sessions, make_handler, ORIGIN, PORT
+from public_server import Sessions, make_handler, evolution_path, ORIGIN, PORT
 
 
 class FakeBackend:
@@ -128,6 +128,28 @@ class PublicTests(unittest.TestCase):
                 self.assertEqual(client.post('/api/admin/action', headers=headers, json={'token': token, 'action': 'dashboard'}).status_code, 200)
                 client.post('/api/admin/action', headers=headers, json={'token': token, 'action': 'logout'})
                 self.assertEqual(client.post('/api/admin/action', headers=headers, json={'token': token, 'action': 'dashboard'}).status_code, 401)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_evolution_requires_admin_and_only_forwards_api_routes(self):
+        self.assertEqual(evolution_path('/api/evolution/play', 'POST'), '/api/play')
+        self.assertIsNone(evolution_path('/api/evolution/../admin/action', 'POST'))
+        self.assertIsNone(evolution_path('/api/evolution/play', 'GET'))
+        service = AdminService('3553')
+        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.sessions))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            headers = {'Host': f'127.0.0.1:{PORT}', 'Origin': ORIGIN}
+            with patch('public_server.admin', service), httpx.Client(base_url=f'http://127.0.0.1:{server.server_port}', trust_env=False) as client:
+                self.assertEqual(client.get('/api/evolution/games', headers=headers).status_code, 401)
+                token = client.post('/api/admin/login', headers=headers, json={'password': '3553'}).json()['token']
+                authorized = {**headers, 'X-Lucid-Admin': token}
+                with patch('public_server.fetch_evolution', return_value=httpx.Response(200, json=[{'id': 'snake'}])) as upstream:
+                    response = client.get('/api/evolution/games', headers=authorized)
+                    self.assertEqual(response.json(), [{'id': 'snake'}])
+                    upstream.assert_called_once_with('GET', '/api/games', None)
+                self.assertEqual(client.post('/api/evolution/anything', headers=authorized, json={}).status_code, 404)
         finally:
             server.shutdown()
             server.server_close()

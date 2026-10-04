@@ -45,6 +45,41 @@ def fetch_evolution(method, path, body):
                               json=body if method == 'POST' else None)
 
 
+def watch_path(path):
+    if path == '/api/evolution/watch':
+        return 'sessions', None
+    match = re.fullmatch(r'/api/evolution/watch/([0-9a-f]{12})(/replay)?', path)
+    if not match:
+        return None, None
+    return ('replay' if match.group(2) else 'session'), match.group(1)
+
+
+def watch_data(path):
+    kind, identifier = watch_path(path)
+    if kind is None:
+        return 404, {'error': 'Not found.'}
+    local = '/api/sessions' + ('/' + identifier if identifier else '')
+    if kind == 'replay':
+        local += '/replay'
+    response = fetch_evolution('GET', local, None)
+    if response.status_code != 200:
+        return response.status_code, {'error': 'Training session unavailable.'}
+    data = response.json()
+    if kind == 'sessions':
+        return 200, [{key: item[key] for key in ('id', 'game', 'status')}
+                     for item in data if all(key in item for key in ('id', 'game', 'status'))]
+    if kind == 'replay':
+        return 200, {'frames': data.get('frames', [])[-250:]}
+    fields = ('status', 'mode', 'episode', 'steps', 'reward', 'average_reward',
+              'best_score', 'success_rate', 'steps_per_second', 'loss',
+              'epsilon', 'generation', 'frame')
+    result = {key: data.get(key) for key in fields}
+    result['game'] = data.get('config', {}).get('game')
+    result['history'] = [{'episode': row['episode'], 'reward': row['reward'],
+                          'score': row['score']} for row in data.get('history', [])[-200:]]
+    return 200, result
+
+
 class PublicWorkspace(Workspace):
     def __init__(self, *args, data_store=None, data_identity=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -328,6 +363,11 @@ def make_handler(sessions):
                 return self.send(403, {'error': 'Invalid origin or host.'})
             if self.path == '/api/health':
                 return self.send(200, {'app': 'lucid-v5-public'})
+            if self.path.startswith('/api/evolution/watch'):
+                try:
+                    return self.send(*watch_data(self.path))
+                except (httpx.HTTPError, ValueError, KeyError, TypeError):
+                    return self.send(503, {'error': 'Live game feed is unavailable.'})
             if self.path.startswith('/api/evolution/'):
                 return self.evolution('GET')
             item = sessions.get(self.headers.get('X-Lucid-Session', ''))

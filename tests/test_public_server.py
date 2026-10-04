@@ -8,7 +8,7 @@ from unittest.mock import patch
 from admin_service import AdminService
 from http.server import ThreadingHTTPServer
 import httpx
-from public_server import Sessions, make_handler, evolution_path, ORIGIN, PORT
+from public_server import Sessions, make_handler, evolution_path, watch_path, ORIGIN, PORT
 
 
 class FakeBackend:
@@ -150,6 +150,32 @@ class PublicTests(unittest.TestCase):
                     self.assertEqual(response.json(), [{'id': 'snake'}])
                     upstream.assert_called_once_with('GET', '/api/games', None)
                 self.assertEqual(client.post('/api/evolution/anything', headers=authorized, json={}).status_code, 404)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_public_watch_exposes_only_gameplay_fields(self):
+        self.assertEqual(watch_path('/api/evolution/watch/012345abcdef'), ('session', '012345abcdef'))
+        self.assertEqual(watch_path('/api/evolution/watch/012345abcdef/replay'), ('replay', '012345abcdef'))
+        self.assertEqual(watch_path('/api/evolution/watch/../checkpoints'), (None, None))
+        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.sessions))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            headers = {'Host': f'127.0.0.1:{PORT}', 'Origin': ORIGIN}
+            snapshot = {'status':'running','mode':'live','episode':5,'steps':50,
+                        'config':{'game':'snake','checkpoint':'secret.pt'},
+                        'frame':{'game':'snake','score':2},
+                        'history':[{'episode':5,'reward':3,'score':2,'private':'hidden'}],
+                        'decision':{'observation':'private'}}
+            with httpx.Client(base_url=f'http://127.0.0.1:{server.server_port}', trust_env=False) as client:
+                with patch('public_server.fetch_evolution', return_value=httpx.Response(200, json=snapshot)):
+                    response = client.get('/api/evolution/watch/012345abcdef', headers=headers)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.json()['game'], 'snake')
+                    self.assertNotIn('config', response.text)
+                    self.assertNotIn('decision', response.text)
+                    self.assertNotIn('private', response.text)
+                self.assertEqual(client.post('/api/evolution/watch', headers=headers, json={}).status_code, 404)
         finally:
             server.shutdown()
             server.server_close()

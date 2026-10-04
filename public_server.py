@@ -1,5 +1,6 @@
 """Bounded public gateway for Lucid V5; never serves the owner's workspace."""
 import json
+import os
 import re
 import secrets
 import tempfile
@@ -11,12 +12,13 @@ from pathlib import Path
 import httpx
 
 from dev_chat import DeveloperChat
-from admin_service import admin
+from admin_service import admin, AdminService
 from website_server import Workspace, BrowserBackend
 from visitor_data_store import VisitorDataStore
 
 ORIGIN = 'https://lucidiscool.github.io'
 PORT = 8767
+evolution_admin = AdminService(os.environ.get('LUCID_EVOLUTION_PASSCODE', ''))
 ALLOWED = {'/new', '/think', '/forget', '/facts', '/teach', '/reset', '/remember',
            '/memories', '/good', '/bad', '/correct', '/feedback', '/unrate', '/chats',
            '/load', '/history', '/save', '/temperature', '/tokens', '/settings', '/stats',
@@ -78,6 +80,26 @@ def watch_data(path):
     result['history'] = [{'episode': row['episode'], 'reward': row['reward'],
                           'score': row['score']} for row in data.get('history', [])[-200:]]
     return 200, result
+
+
+def portfolio_path(path):
+    match = re.fullmatch(
+        r'/api/evolution/portfolio(?:/(snake|pong|flappy|tetris|racing|platformer|chess)(/replay)?)?',
+        path,
+    )
+    if not match:
+        return None
+    return '/api/portfolio' + ('/' + match.group(1) if match.group(1) else '') + (match.group(2) or '')
+
+
+def portfolio_data(path):
+    local = portfolio_path(path)
+    if local is None:
+        return 404, {'error': 'Not found.'}
+    response = fetch_evolution('GET', local, None)
+    if response.status_code != 200:
+        return response.status_code, {'error': 'Training portfolio is unavailable.'}
+    return 200, response.json()
 
 
 class PublicWorkspace(Workspace):
@@ -368,6 +390,11 @@ def make_handler(sessions):
                     return self.send(*watch_data(self.path))
                 except (httpx.HTTPError, ValueError, KeyError, TypeError):
                     return self.send(503, {'error': 'Live game feed is unavailable.'})
+            if self.path.startswith('/api/evolution/portfolio'):
+                try:
+                    return self.send(*portfolio_data(self.path))
+                except (httpx.HTTPError, ValueError, KeyError, TypeError):
+                    return self.send(503, {'error': 'Training portfolio is unavailable.'})
             if self.path.startswith('/api/evolution/'):
                 return self.evolution('GET')
             item = sessions.get(self.headers.get('X-Lucid-Session', ''))
@@ -387,6 +414,15 @@ def make_handler(sessions):
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError('Expected a JSON object.')
+                if self.path == '/api/evolution/admin/login':
+                    return self.send(200, evolution_admin.login(body.get('code')))
+                if self.path == '/api/evolution/admin/new-save':
+                    evolution_admin.authorize(body.get('token'))
+                    game = body.get('game')
+                    if game not in ('snake', 'pong', 'flappy', 'tetris', 'racing', 'platformer', 'chess'):
+                        raise ValueError('Choose one of the seven games.')
+                    response = fetch_evolution('POST', f'/api/portfolio/{game}/new-save', {})
+                    return self.send(response.status_code, response.json())
                 if self.path.startswith('/api/evolution/'):
                     return self.evolution('POST', body)
                 if self.path == '/api/admin/login':
@@ -423,7 +459,7 @@ def make_handler(sessions):
             except PermissionError as error:
                 self.send(401, {'error': str(error)})
             except (ValueError, TypeError) as error:
-                if self.path.startswith('/api/admin/'):
+                if self.path.startswith(('/api/admin/', '/api/evolution/admin/')):
                     return self.send(400, {'error': str(error)})
                 self.send(400, {'error': 'Invalid message or command. Messages: up to 4000 characters; search/research topics: 1–1000 characters; reply tokens: 32–1024. Model configuration is local-only.'})
             except RuntimeError as error:

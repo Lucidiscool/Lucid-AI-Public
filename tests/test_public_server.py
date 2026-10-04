@@ -8,7 +8,7 @@ from unittest.mock import patch
 from admin_service import AdminService
 from http.server import ThreadingHTTPServer
 import httpx
-from public_server import Sessions, make_handler, evolution_path, watch_path, ORIGIN, PORT
+from public_server import Sessions, make_handler, evolution_path, watch_path, portfolio_path, ORIGIN, PORT
 
 
 class FakeBackend:
@@ -176,6 +176,30 @@ class PublicTests(unittest.TestCase):
                     self.assertNotIn('decision', response.text)
                     self.assertNotIn('private', response.text)
                 self.assertEqual(client.post('/api/evolution/watch', headers=headers, json={}).status_code, 404)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_portfolio_admin_code_controls_new_save_only(self):
+        self.assertEqual(portfolio_path('/api/evolution/portfolio/chess/replay'), '/api/portfolio/chess/replay')
+        self.assertIsNone(portfolio_path('/api/evolution/portfolio/../admin'))
+        service = AdminService('3553')
+        server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(self.sessions))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            headers = {'Host': f'127.0.0.1:{PORT}', 'Origin': ORIGIN}
+            with patch('public_server.evolution_admin', service), httpx.Client(base_url=f'http://127.0.0.1:{server.server_port}', trust_env=False) as client:
+                self.assertEqual(client.post('/api/evolution/admin/new-save', headers=headers,
+                                             json={'game':'snake'}).status_code, 401)
+                token = client.post('/api/evolution/admin/login', headers=headers,
+                                    json={'code':'3553'}).json()['token']
+                with patch('public_server.fetch_evolution', return_value=httpx.Response(200, json={'save_id':'new'})) as upstream:
+                    response = client.post('/api/evolution/admin/new-save', headers=headers,
+                                           json={'game':'snake','token':token})
+                    self.assertEqual(response.json()['save_id'], 'new')
+                    upstream.assert_called_once_with('POST', '/api/portfolio/snake/new-save', {})
+                    self.assertEqual(client.post('/api/evolution/admin/new-save', headers=headers,
+                                                 json={'game':'../../secrets','token':token}).status_code, 400)
         finally:
             server.shutdown()
             server.server_close()

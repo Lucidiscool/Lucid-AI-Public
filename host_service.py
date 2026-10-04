@@ -17,6 +17,9 @@ def main():
     elif mode == 'host':
         credentials = Path(os.environ['CREDENTIALS_DIRECTORY'])
         os.environ['LUCID_ADMIN_PASSCODE'] = (credentials / 'admin-passcode').read_text().strip()
+        evolution_passcode = credentials / 'evolution-passcode'
+        if evolution_passcode.exists():
+            os.environ['LUCID_EVOLUTION_PASSCODE'] = evolution_passcode.read_text().strip()
         os.environ['GH_TOKEN'] = (credentials / 'github-token').read_text().strip()
         os.environ['GIT_TERMINAL_PROMPT'] = '0'
         command = [sys.executable, '-u', str(ROOT / 'host_public.py'),
